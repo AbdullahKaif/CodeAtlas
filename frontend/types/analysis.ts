@@ -1,0 +1,47 @@
+/** Mirrors the backend Pydantic models (backend/repository/scanner.py, api/analyze.py). */
+
+export interface FileInfo {
+  path: string;
+  name: string;
+  extension: string;
+  language: string | null;
+  size_bytes: number;
+  line_count: number | null;
+  is_entry_point: boolean;
+  is_project_file: boolean;
+  is_test_file: boolean;
+}
+
+export interface ScanSummary {
+  total_files_seen: number;
+  files_included: number;
+  files_skipped_binary: number;
+  files_skipped_large: number;
+  files_skipped_other: number;
+  dirs_skipped: number;
+  truncated: boolean;
+}
+
+export interface RepositoryScan {
+  root: string;
+  files: FileInfo[];
+  languages: Record<string, number>;
+  entry_points: string[];
+  project_files: string[];
+  total_size_bytes: number;
+  summary: ScanSummary;
+}
+
+export interface AnalyzeResponse {
+  session_id: string;
+  repository: { name: string; url: string };
+  scan: RepositoryScan;
+}
+
+/** A past analysis remembered in localStorage (client-side only, no code stored). */
+export interface RecentSession {
+  sessionId: string;
+  name: string;
+  url: string;
+  analyzedAt: string;
+}
