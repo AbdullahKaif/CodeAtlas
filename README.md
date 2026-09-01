@@ -30,6 +30,7 @@ Everything runs locally. Repository content is never sent to an external API.
 | Phase | Feature | Status |
 |-------|---------|--------|
 | 1 | Project setup, GitHub cloning, repository scanner | Done |
+| - | Frontend dashboard (landing, overview, privacy settings) | Done |
 | 2 | Tree-sitter parsing, entities, relationships | Planned |
 | 3 | Chunking, embeddings, FAISS | Planned |
 | 4 | Ollama + Qwen3-Coder RAG chat | Planned |
@@ -58,13 +59,33 @@ source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
 
-## Run the API
+## Frontend setup
+
+Requires Node 18+.
+
+```bash
+cd frontend
+npm install
+```
+
+## Run CodeAtlas
+
+Terminal 1 - backend API:
 
 ```bash
 uvicorn backend.main:app --reload
 ```
 
-Then open http://127.0.0.1:8000/docs for the interactive API docs.
+Terminal 2 - frontend:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open http://localhost:3000, paste a GitHub URL and hit **Analyze**.
+(The raw API docs remain at http://127.0.0.1:8000/docs. If the backend runs on a
+different host/port, set `NEXT_PUBLIC_API_URL` - see `frontend/.env.local.example`.)
 
 ### Current endpoints
 
@@ -108,7 +129,7 @@ not require network access.
 ## Configuration
 
 All settings can be overridden via `CODEATLAS_*` environment variables (see
-`backend/config.py`): `CODEATLAS_TEMP_DIR`, `CODEATLAS_MAX_REPO_SIZE_MB`,
+`backend/config.py`): `CODEATLAS_TEMP_DIR`, `CODEATLAS_MAX_REPO_SIZE_MB` (0 = unlimited, the default),
 `CODEATLAS_MAX_FILE_SIZE_BYTES`, `CODEATLAS_CLONE_DEPTH`, ...
 
 ## Limitations (current)
