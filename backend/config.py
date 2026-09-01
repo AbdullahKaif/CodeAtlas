@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # Cloning
     clone_depth: int = 1
-    max_repo_size_mb: int = 500
+    max_repo_size_mb: int = 0  # 0 = no limit; set a positive value to cap clone size
     # Abort clones that stall below this transfer rate for this long (handles hung networks).
     clone_low_speed_limit_bytes: int = 1000
     clone_low_speed_time_seconds: int = 30

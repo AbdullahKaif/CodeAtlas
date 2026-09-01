@@ -148,6 +148,8 @@ def _precheck_repo_size(url: str) -> None:
     sizes far beyond the limit (2x) are rejected here; the post-clone check
     enforces the exact limit. Skipped silently when the API is unavailable.
     """
+    if settings.max_repo_size_mb <= 0:
+        return  # no size limit configured
     parts = urlparse(url).path.strip("/").removesuffix(".git").split("/")
     if len(parts) != 2:
         return
@@ -179,7 +181,7 @@ def clone_repository(url: str, dest: Path, *, depth: int | None = None) -> Path:
         raise GitCloneError(f"Could not clone repository: {exc.__class__.__name__}") from exc
 
     size_bytes = directory_size_bytes(dest)
-    if size_bytes > settings.max_repo_size_mb * 1024 * 1024:
+    if settings.max_repo_size_mb > 0 and size_bytes > settings.max_repo_size_mb * 1024 * 1024:
         raise RepoTooLargeError(
             f"Repository is larger than the {settings.max_repo_size_mb} MB limit "
             f"({size_bytes // (1024 * 1024)} MB). Set CODEATLAS_MAX_REPO_SIZE_MB to override."

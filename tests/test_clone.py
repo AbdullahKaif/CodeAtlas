@@ -85,17 +85,32 @@ class TestCloneRepository:
         with pytest.raises(GitCloneError):
             clone_repository(str(tmp_path / "does_not_exist"), repo_dir)
 
-    def test_clone_rejects_oversized_repo(self, temp_sessions, local_git_repo, monkeypatch):
-        monkeypatch.setattr(settings, "max_repo_size_mb", 0)
+    def test_clone_rejects_oversized_repo_when_limit_set(self, temp_sessions, local_git_repo, monkeypatch):
+        import backend.repository.clone as clone_module
+
+        monkeypatch.setattr(settings, "max_repo_size_mb", 1)
+        monkeypatch.setattr(clone_module, "directory_size_bytes", lambda p: 10 * 1024 * 1024)
         _, repo_dir = create_session()
         with pytest.raises(RepoTooLargeError):
             clone_repository(str(local_git_repo), repo_dir)
+
+    def test_no_limit_by_default(self, temp_sessions, local_git_repo, monkeypatch):
+        """max_repo_size_mb=0 (the default) disables both size checks entirely."""
+        import backend.repository.clone as clone_module
+
+        monkeypatch.setattr(settings, "max_repo_size_mb", 0)
+        monkeypatch.setattr(clone_module, "directory_size_bytes", lambda p: 10**15)
+        monkeypatch.setattr(clone_module, "_github_repo_size_kb", lambda o, r: 10**12)
+        _, repo_dir = create_session()
+        clone_repository(str(local_git_repo), repo_dir)
+        assert (repo_dir / "main.py").is_file()
 
 
 class TestSizePrecheck:
     def test_precheck_rejects_huge_repo_before_download(self, temp_sessions, monkeypatch):
         import backend.repository.clone as clone_module
 
+        monkeypatch.setattr(settings, "max_repo_size_mb", 500)
         monkeypatch.setattr(clone_module, "_github_repo_size_kb", lambda o, r: 10**9)
         _, repo_dir = create_session()
         with pytest.raises(RepoTooLargeError):
