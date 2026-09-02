@@ -32,7 +32,7 @@ Everything runs locally. Repository content is never sent to an external API.
 | 1 | Project setup, GitHub cloning, repository scanner | Done |
 | - | Frontend dashboard (landing, overview, privacy settings) | Done |
 | 2a | Tree-sitter parsing, entities, `contains`/`imports` relationships | Done |
-| 2b | `inherits` and `calls` relationships | Planned |
+| 2b | `inherits` and `calls` relationships | Done |
 | 3 | Chunking, embeddings, FAISS | Planned |
 | 4 | Ollama + Qwen3-Coder RAG chat | Planned |
 | 5 | Semgrep + Gitleaks security engine | Planned |
@@ -137,8 +137,10 @@ All settings can be overridden via `CODEATLAS_*` environment variables (see
 
 - Public GitHub repositories only (HTTPS, no SSH/private repos).
 - Python-first analysis; other languages are inventoried but not yet parsed.
-- Relationship extraction covers `contains` and `imports` so far; `inherits`
-  and `calls` land in the next phase (see `docs/adr/0001` for the model).
+- `inherits` and `calls` edges are static best-effort: they only link names
+  that resolve to entities inside the repository (see `docs/adr/0001`).
+  Inherited-method calls (`self.x()` defined on a base class), dynamic dispatch
+  and computed callees are deliberately not edges.
 - Long path support inside cloned repos is enabled for git itself
   (`core.longpaths`); scanning them additionally benefits from Windows
   long-path support being enabled.

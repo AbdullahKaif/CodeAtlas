@@ -15,7 +15,7 @@ import logging
 import tree_sitter_python
 from tree_sitter import Language, Node, Parser
 
-from backend.parser.models import Entity, ImportStatement, ParsedFile, entity_id
+from backend.parser.models import CallSite, Entity, ImportedName, ImportStatement, ParsedFile, entity_id
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +45,12 @@ def parse_python_file(file_bytes: bytes, file_path: str) -> ParsedFile:
 
     entities: list[Entity] = []
     imports: list[ImportStatement] = []
-    _walk(root, file_path, scope=[], entities=entities, imports=imports)
+    calls: list[CallSite] = []
+    _walk(root, file_path, scope=[], entities=entities, imports=imports, calls=calls)
     return ParsedFile(
         entities=entities,
         imports=imports,
+        calls=calls,
         module_docstring=_docstring_of_block(root),
         had_syntax_errors=root.has_error,
     )
@@ -60,15 +62,16 @@ def _walk(
     scope: list[tuple[str, str]],  # (name, node_type) of enclosing definitions
     entities: list[Entity],
     imports: list[ImportStatement],
+    calls: list[CallSite],
 ) -> None:
     for child in node.named_children:
         if child.type == "decorated_definition":
             definition = child.child_by_field_name("definition")
             if definition is not None and definition.type in _DEFINITION_TYPES:
-                _extract_definition(definition, child, file_path, scope, entities, imports)
+                _extract_definition(definition, child, file_path, scope, entities, imports, calls)
             continue
         if child.type in _DEFINITION_TYPES:
-            _extract_definition(child, child, file_path, scope, entities, imports)
+            _extract_definition(child, child, file_path, scope, entities, imports, calls)
             continue
         if child.type == "import_statement":
             imports.extend(_extract_plain_import(child))
@@ -78,10 +81,16 @@ def _walk(
             if statement is not None:
                 imports.append(statement)
             continue
+        if child.type == "call":
+            callee = _callee_text(child.child_by_field_name("function"))
+            if callee is not None:
+                caller = entity_id(file_path, ".".join(s for s, _ in scope) or None)
+                calls.append(CallSite(caller=caller, callee=callee, line=child.start_point[0] + 1))
+            # Fall through: arguments may contain further calls.
         # Recurse into compound statements (if/try/with/...) so guarded
         # definitions like `if TYPE_CHECKING:` blocks are still found. The
         # scope stack is untouched: blocks do not introduce named scopes.
-        _walk(child, file_path, scope, entities, imports)
+        _walk(child, file_path, scope, entities, imports, calls)
 
 
 def _extract_definition(
@@ -91,6 +100,7 @@ def _extract_definition(
     scope: list[tuple[str, str]],
     entities: list[Entity],
     imports: list[ImportStatement],
+    calls: list[CallSite],
 ) -> None:
     name_node = definition.child_by_field_name("name")
     body = definition.child_by_field_name("body")
@@ -120,7 +130,7 @@ def _extract_definition(
     entities.append(entity)
 
     scope.append((name, definition.type))
-    _walk(body, file_path, scope, entities, imports)
+    _walk(body, file_path, scope, entities, imports, calls)
     scope.pop()
 
 
@@ -132,8 +142,15 @@ def _extract_plain_import(node: Node) -> list[ImportStatement]:
             statements.append(ImportStatement(module=_text(child), line=child.start_point[0] + 1))
         elif child.type == "aliased_import":
             target = child.child_by_field_name("name")
+            alias = child.child_by_field_name("alias")
             if target is not None:
-                statements.append(ImportStatement(module=_text(target), line=child.start_point[0] + 1))
+                statements.append(
+                    ImportStatement(
+                        module=_text(target),
+                        alias=_text(alias) if alias is not None else None,
+                        line=child.start_point[0] + 1,
+                    )
+                )
     return statements
 
 
@@ -154,20 +171,23 @@ def _extract_from_import(node: Node) -> ImportStatement | None:
     else:
         module = _text(module_node)
 
-    names: list[str] = []
+    names: list[ImportedName] = []
     for child in node.named_children:
         # Compare node ids: py-tree-sitter returns a fresh wrapper object per
         # access, so `is` would never match the module_name field node.
         if child.id == module_node.id:
             continue
         if child.type == "dotted_name":
-            names.append(_text(child))
+            names.append(ImportedName(name=_text(child)))
         elif child.type == "aliased_import":
             original = child.child_by_field_name("name")
+            alias = child.child_by_field_name("alias")
             if original is not None:
-                names.append(_text(original))
+                names.append(
+                    ImportedName(name=_text(original), alias=_text(alias) if alias is not None else None)
+                )
         elif child.type == "wildcard_import":
-            names.append("*")
+            names.append(ImportedName(name="*"))
     return ImportStatement(module=module, names=names, level=level, line=node.start_point[0] + 1)
 
 
@@ -236,6 +256,25 @@ def _docstring_of_block(block: Node) -> str | None:
         _text(part) for part in string_node.children if part.type in {"string_content", "escape_sequence"}
     )
     return content.strip() or None
+
+
+def _callee_text(function_node: Node | None) -> str | None:
+    """The callee as a dotted name, or None when it is a computed expression.
+
+    ``login`` and ``self.auth.login`` are readable; ``handlers[0]()`` or
+    ``get_service()()`` are not statically resolvable and yield None.
+    """
+    if function_node is None:
+        return None
+    if function_node.type == "identifier":
+        return _text(function_node)
+    if function_node.type == "attribute":
+        obj = _callee_text(function_node.child_by_field_name("object"))
+        attr = function_node.child_by_field_name("attribute")
+        if obj is None or attr is None:
+            return None
+        return f"{obj}.{_text(attr)}"
+    return None
 
 
 def _text(node: Node) -> str:

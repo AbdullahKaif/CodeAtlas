@@ -52,6 +52,66 @@ class TestBuildKnowledgeBase:
         assert ("app/auth.py", "app/auth.py::AuthService") in contains
         assert ("app/auth.py::AuthService", "app/auth.py::AuthService.login") in contains
 
+    def test_inherits_edges_from_fixture_repo(self, sample_kb):
+        inherits = {(r.source, r.target) for r in sample_kb.relationships if r.relation == "inherits"}
+        # AuthService(BaseService) crosses files via `from app.base import BaseService`:
+        assert ("app/auth.py::AuthService", "app/base.py::BaseService") in inherits
+
+    def test_call_edges_from_fixture_repo(self, sample_kb):
+        calls = {(r.source, r.target) for r in sample_kb.relationships if r.relation == "calls"}
+        # login() calls the imported find_user():
+        assert ("app/auth.py::AuthService.login", "app/database.py::find_user") in calls
+        # run() instantiates AuthService (a call edge to the class):
+        assert ("app/main.py::run", "app/auth.py::AuthService") in calls
+        assert ("tests/test_auth.py::test_login_unknown_user_fails", "app/auth.py::AuthService") in calls
+        # sqlite3.connect etc. are external - never edges:
+        assert not any("sqlite3" in t for _, t in calls)
+
+    def test_self_calls_and_local_calls(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "svc.py").write_text(
+            "class Service:\n"
+            "    def go(self):\n"
+            "        self.stop()\n"
+            "    def stop(self):\n"
+            "        pass\n"
+            "\n"
+            "def helper():\n"
+            "    return Service()\n"
+            "\n"
+            "def recurse(n):\n"
+            "    return recurse(n - 1)\n",
+            encoding="utf-8",
+        )
+        kb = build_knowledge_base(repo, scan_repository(repo))
+        calls = {(r.source, r.target) for r in kb.relationships if r.relation == "calls"}
+        assert ("svc.py::Service.go", "svc.py::Service.stop") in calls
+        assert ("svc.py::helper", "svc.py::Service") in calls
+        # Recursion is a real edge, deliberately kept:
+        assert ("svc.py::recurse", "svc.py::recurse") in calls
+
+    def test_generic_bases_resolve_and_external_bases_do_not(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "models.py").write_text(
+            "from enum import Enum\n"
+            "\n"
+            "class Base:\n"
+            "    pass\n"
+            "\n"
+            "class Typed(Base[int]):\n"
+            "    pass\n"
+            "\n"
+            "class Color(Enum):\n"
+            "    RED = 1\n",
+            encoding="utf-8",
+        )
+        kb = build_knowledge_base(repo, scan_repository(repo))
+        inherits = {(r.source, r.target) for r in kb.relationships if r.relation == "inherits"}
+        assert ("models.py::Typed", "models.py::Base") in inherits  # Base[int] -> Base
+        assert not any(s == "models.py::Color" for s, _ in inherits)  # Enum is external
+
     def test_summary_invariant_and_counts(self, sample_kb):
         s = sample_kb.summary
         assert s.python_files == s.files_parsed + s.files_failed + s.files_skipped_large

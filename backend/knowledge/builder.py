@@ -15,9 +15,12 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.parser.models import Entity, ParsedFile, ParseSummary, Relationship
 from backend.parser.relationships import (
+    SymbolResolver,
     build_module_map,
+    call_relationships,
     contains_relationships,
     import_relationships,
+    inherits_relationships,
 )
 from backend.parser.tree_parser import FileParseError, parse_python_file
 from backend.repository.scanner import RepositoryScan
@@ -49,6 +52,7 @@ def build_knowledge_base(repo_root: Path, scan: RepositoryScan) -> KnowledgeBase
 
     parsed = failed = skipped_large = with_errors = 0
     failed_files: list[str] = []
+    parsed_files: dict[str, ParsedFile] = {}  # kept for the resolution pass below
 
     for info in scan.files:
         if info.language is None:
@@ -75,6 +79,7 @@ def build_knowledge_base(repo_root: Path, scan: RepositoryScan) -> KnowledgeBase
             failed_files.append(info.path)
             continue
         parsed += 1
+        parsed_files[info.path] = result
         if result.had_syntax_errors:
             with_errors += 1
         if result.module_docstring and info.path in entities:
@@ -89,6 +94,16 @@ def build_knowledge_base(repo_root: Path, scan: RepositoryScan) -> KnowledgeBase
     # definition never produces two edges to the same ID.
     entity_list = list(entities.values())
     relationships = contains_relationships(entity_list) + relationships
+
+    # Second pass: inheritance and calls can only be resolved once every
+    # entity in the repository is known (a base class or callee may live in a
+    # file parsed later than its user).
+    entity_types = {e.id: e.type for e in entity_list}
+    for path, result in parsed_files.items():
+        resolver = SymbolResolver(path, result.imports, module_map, entity_types)
+        classes = (e for e in result.entities if e.type == "class" and e.id in entities)
+        relationships.extend(inherits_relationships(resolver, classes))
+        relationships.extend(call_relationships(resolver, result.calls))
 
     summary = ParseSummary(
         python_files=len(python_files),

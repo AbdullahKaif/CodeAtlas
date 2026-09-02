@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from backend.parser.models import Entity, ImportStatement
 from backend.parser.relationships import (
+    SymbolResolver,
     build_module_map,
     contains_relationships,
     import_relationships,
@@ -38,11 +39,14 @@ class TestModuleMap:
         assert build_module_map(["__init__.py"]) == {}
 
 
+def statement(names: tuple[str, ...] = (), **kwargs) -> ImportStatement:
+    return ImportStatement(line=1, names=[{"name": n} for n in names], **kwargs)
+
+
 class TestImportResolution:
-    def resolve(self, file_path: str, **kwargs) -> set[str]:
+    def resolve(self, file_path: str, names: tuple[str, ...] = (), **kwargs) -> set[str]:
         module_map = build_module_map(FILES)
-        statement = ImportStatement(line=1, **kwargs)
-        edges = import_relationships(file_path, [statement], module_map)
+        edges = import_relationships(file_path, [statement(names, **kwargs)], module_map)
         assert all(e.relation == "imports" and e.source == file_path for e in edges)
         return {e.target for e in edges}
 
@@ -80,11 +84,80 @@ class TestImportResolution:
     def test_duplicate_targets_deduplicated(self):
         module_map = build_module_map(FILES)
         statements = [
-            ImportStatement(module="app.auth", names=["login"], line=1),
-            ImportStatement(module="app.auth", names=["logout"], line=2),
+            statement(("login",), module="app.auth"),
+            statement(("logout",), module="app.auth"),
         ]
         edges = import_relationships("main.py", statements, module_map)
         assert len(edges) == 1
+
+
+class TestSymbolResolver:
+    ENTITY_TYPES = {
+        "app/auth.py": "file",
+        "app/auth.py::login": "function",
+        "app/auth.py::AuthService": "class",
+        "app/auth.py::AuthService.login": "method",
+        "app/base.py::BaseService": "class",
+        "util.py::helper": "function",
+        "main.py::Local": "class",
+    }
+
+    def resolver(self, *imports: ImportStatement, entity_types=None) -> SymbolResolver:
+        return SymbolResolver(
+            "main.py", list(imports), build_module_map(FILES), entity_types or self.ENTITY_TYPES
+        )
+
+    def test_local_definition_wins(self):
+        assert self.resolver().resolve("Local") == "main.py::Local"
+
+    def test_imported_symbol(self):
+        r = self.resolver(statement(("login",), module="app.auth"))
+        assert r.resolve("login") == "app/auth.py::login"
+
+    def test_imported_symbol_alias(self):
+        stmt = ImportStatement(module="app.auth", names=[{"name": "login", "alias": "l"}], line=1)
+        r = self.resolver(stmt)
+        assert r.resolve("l") == "app/auth.py::login"
+        assert r.resolve("login") is None  # the alias is the only binding
+
+    def test_module_attribute_chain(self):
+        r = self.resolver(statement(module="app.auth"))
+        assert r.resolve("app.auth.login") == "app/auth.py::login"
+        assert r.resolve("app.auth.AuthService") == "app/auth.py::AuthService"
+
+    def test_aliased_module(self):
+        r = self.resolver(statement(module="app.auth", alias="aa"))
+        assert r.resolve("aa.login") == "app/auth.py::login"
+
+    def test_from_package_import_module(self):
+        # `from app import auth; auth.login()` - auth is a module, not a symbol.
+        r = self.resolver(statement(("auth",), module="app"))
+        assert r.resolve("auth.login") == "app/auth.py::login"
+
+    def test_wildcard_resolves_only_when_unambiguous(self):
+        r = self.resolver(statement(("*",), module="app.auth"), statement(("*",), module="util"))
+        assert r.resolve("helper") == "util.py::helper"  # only util defines it
+        ambiguous_types = {**self.ENTITY_TYPES, "util.py::login": "function"}
+        r = self.resolver(
+            statement(("*",), module="app.auth"),
+            statement(("*",), module="util"),
+            entity_types=ambiguous_types,
+        )
+        assert r.resolve("login") is None  # both modules define login: no guess
+
+    def test_self_calls_resolve_within_the_class_only(self):
+        r = self.resolver()
+        assert r.resolve("self.login", enclosing_class="app/auth.py::AuthService") == (
+            "app/auth.py::AuthService.login"
+        )
+        assert r.resolve("self.login") is None
+        assert r.resolve("self.missing", enclosing_class="app/auth.py::AuthService") is None
+
+    def test_unresolvable_names_yield_none(self):
+        r = self.resolver(statement(module="os"))
+        assert r.resolve("os.path.join") is None  # external module
+        assert r.resolve("nonexistent") is None
+        assert r.resolve("not-an-identifier!") is None
 
 
 class TestContains:
