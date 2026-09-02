@@ -1,4 +1,4 @@
-import type { AnalyzeResponse } from "@/types/analysis";
+import type { AnalysisStatus, AnalyzeResponse, AnalyzeStarted } from "@/types/analysis";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -35,11 +35,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function analyzeRepository(repoUrl: string): Promise<AnalyzeResponse> {
-  return request<AnalyzeResponse>("/api/analyze", {
+export function analyzeRepository(repoUrl: string): Promise<AnalyzeStarted> {
+  return request<AnalyzeStarted>("/api/analyze", {
     method: "POST",
     body: JSON.stringify({ repo_url: repoUrl }),
   });
+}
+
+export function getAnalysisStatus(sessionId: string): Promise<AnalysisStatus> {
+  return request<AnalysisStatus>(
+    `/api/analysis/${encodeURIComponent(sessionId)}/status`,
+  );
 }
 
 export function getOverview(sessionId: string): Promise<AnalyzeResponse> {

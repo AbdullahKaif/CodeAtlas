@@ -1,33 +1,22 @@
-"""Analysis session endpoints: create a session (clone + scan), read it back, delete it."""
+"""Analysis session endpoints: start a background analysis, poll it, read it, delete it."""
 from __future__ import annotations
 
 import logging
-import os
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException
-from fastapi.concurrency import run_in_threadpool
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.config import settings
-from backend.knowledge.builder import KnowledgeBase, build_knowledge_base
-from backend.knowledge.serializer import write_chunks, write_knowledge_base
-from backend.parser.models import ParseSummary
-from backend.rag.chunker import build_chunks
-from backend.rag.models import Chunk, ChunkSummary, IndexSummary
-from backend.rag.retriever import build_index
+from backend.analysis.runner import AnalyzeResponse, RepositoryInfo, run_analysis
+from backend.analysis.status import AnalysisStatus, StatusTracker, load_status
 from backend.privacy.cleanup import delete_session
 from backend.repository.clone import (
-    CloneError,
-    GitCloneError,
     InvalidRepoURLError,
-    RepoTooLargeError,
-    clone_repository,
     create_session,
     get_session_dir,
     repo_name_from_url,
     validate_github_url,
 )
-from backend.repository.scanner import RepositoryScan, scan_repository
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,22 +26,12 @@ class AnalyzeRequest(BaseModel):
     repo_url: str = Field(..., description="HTTPS GitHub repository URL", examples=["https://github.com/pallets/flask"])
 
 
-class RepositoryInfo(BaseModel):
-    name: str
-    url: str
+class AnalyzeStartedResponse(BaseModel):
+    """Analysis runs in the background; poll /api/analysis/{session_id}/status."""
 
-
-class AnalyzeResponse(BaseModel):
     session_id: str
     repository: RepositoryInfo
-    scan: RepositoryScan
-    # None only for sessions persisted before the respective stage existed.
-    parse: ParseSummary | None = None
-    chunks: ChunkSummary | None = None
-    # index is None when embedding failed; index_error then says why (the rest
-    # of the analysis is still usable - spec §42, optional component failure).
-    index: IndexSummary | None = None
-    index_error: str | None = None
+    state: Literal["running"] = "running"
 
 
 class DeleteSessionResponse(BaseModel):
@@ -60,113 +39,49 @@ class DeleteSessionResponse(BaseModel):
     deleted: bool
 
 
-@router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_repository(request: AnalyzeRequest) -> AnalyzeResponse:
-    """Clone a GitHub repository into an isolated session and scan its files."""
+@router.post("/analyze", response_model=AnalyzeStartedResponse, status_code=202)
+async def analyze_repository(request: AnalyzeRequest, background_tasks: BackgroundTasks) -> AnalyzeStartedResponse:
+    """Validate the URL, create an isolated session, and start the analysis."""
     try:
         url = validate_github_url(request.repo_url)
     except InvalidRepoURLError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     session_id, repo_dir = create_session()
-    try:
-        scan, knowledge, chunk_list, chunk_summary, index, index_error = await run_in_threadpool(
-            _clone_scan_parse, url, repo_dir
-        )
-    except RepoTooLargeError as exc:
-        _cleanup_quietly(session_id)
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
-    except GitCloneError as exc:
-        _cleanup_quietly(session_id)
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except CloneError as exc:
-        _cleanup_quietly(session_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except Exception:
-        logger.exception("Unexpected failure while analyzing session %s", session_id)
-        _cleanup_quietly(session_id)
-        raise HTTPException(status_code=500, detail="Repository analysis failed unexpectedly.")
-
-    if scan.summary.files_included == 0:
-        _cleanup_quietly(session_id)
-        raise HTTPException(status_code=422, detail="The repository contains no analyzable source files.")
-
-    response = AnalyzeResponse(
-        session_id=session_id,
-        repository=RepositoryInfo(name=repo_name_from_url(url), url=url),
-        scan=scan,
-        parse=knowledge.summary,
-        chunks=chunk_summary,
-        index=index,
-        index_error=index_error,
+    repo_name = repo_name_from_url(url)
+    # The tracker (and status.json) must exist before the response goes out,
+    # so a client polling immediately never sees a 404 for a real session.
+    tracker = StatusTracker(session_id, repo_name, url)
+    background_tasks.add_task(run_analysis, session_id, url, repo_dir, repo_name, tracker)
+    return AnalyzeStartedResponse(
+        session_id=session_id, repository=RepositoryInfo(name=repo_name, url=url)
     )
-    try:
-        _persist_analysis(session_id, response, knowledge, chunk_list)
-    except OSError as exc:
-        # Without cleanup here the client would never learn the session id and
-        # the cloned repository would be orphaned on disk - a privacy violation.
-        logger.exception("Could not persist analysis for session %s", session_id)
-        _cleanup_quietly(session_id)
-        raise HTTPException(status_code=500, detail="Could not store analysis results locally.") from exc
-    return response
 
 
-def _clone_scan_parse(
-    url: str, repo_dir
-) -> tuple[RepositoryScan, KnowledgeBase, list[Chunk], ChunkSummary, IndexSummary | None, str | None]:
-    """The synchronous analysis stages: clone -> scan -> parse -> chunk -> index.
-
-    Kept as one ordered sequence so the Phase 3c move to background jobs with
-    per-stage progress is a refactor of this function, not of the endpoint.
-    Embedding is the one optional stage: without a model the repository is
-    still cloned, parsed and chunked, and search alone is unavailable.
-    """
-    clone_repository(url, repo_dir)
-    scan = scan_repository(repo_dir)
-    knowledge = build_knowledge_base(repo_dir, scan)
-    chunk_list, chunk_summary = build_chunks(repo_dir, scan, knowledge.entities)
-
-    index: IndexSummary | None = None
-    index_error: str | None = None
-    if chunk_list:
-        try:
-            index = build_index(repo_dir.parent / "vectors", chunk_list)
-        except Exception as exc:
-            logger.warning("Embedding/indexing failed; analysis continues without search: %s", exc)
-            index_error = str(exc)
-    return scan, knowledge, chunk_list, chunk_summary, index, index_error
-
-
-def _persist_analysis(
-    session_id: str, response: AnalyzeResponse, knowledge: KnowledgeBase, chunk_list: list[Chunk]
-) -> None:
-    """Store the analysis under the session: overview, knowledge base and chunks."""
-    analysis_dir = settings.session_dir(session_id) / "analysis"
-    analysis_dir.mkdir(parents=True, exist_ok=True)
-    write_knowledge_base(analysis_dir, knowledge)
-    write_chunks(analysis_dir, chunk_list)
-    # Atomic write: a crash mid-write must not leave a truncated repository.json
-    # behind (it would turn every later overview read into a 500).
-    tmp_path = analysis_dir / "repository.json.tmp"
-    tmp_path.write_text(response.model_dump_json(indent=2), encoding="utf-8")
-    os.replace(tmp_path, analysis_dir / "repository.json")
-
-
-def _cleanup_quietly(session_id: str) -> None:
-    try:
-        delete_session(session_id)
-    except Exception:
-        logger.warning("Could not clean up session %s", session_id)
+@router.get("/analysis/{session_id}/status", response_model=AnalysisStatus)
+def get_analysis_status(session_id: str) -> AnalysisStatus:
+    """Real per-stage progress of a session's analysis (never faked)."""
+    if get_session_dir(session_id) is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    status = load_status(session_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="No analysis status for this session.")
+    return status
 
 
 @router.get("/repository/{session_id}/overview", response_model=AnalyzeResponse)
 def get_overview(session_id: str) -> AnalyzeResponse:
-    """Return the persisted scan overview for an existing session."""
+    """Return the persisted analysis overview for a completed session."""
     session_dir = get_session_dir(session_id)
     if session_dir is None:
         raise HTTPException(status_code=404, detail="Session not found.")
     overview_path = session_dir / "analysis" / "repository.json"
     if not overview_path.is_file():
+        status = load_status(session_id)
+        if status is not None and status.state == "running":
+            raise HTTPException(status_code=409, detail="Analysis is still running.")
+        if status is not None and status.state == "failed":
+            raise HTTPException(status_code=409, detail=status.error or "Analysis failed.")
         raise HTTPException(status_code=404, detail="No analysis found for this session.")
     try:
         return AnalyzeResponse.model_validate_json(overview_path.read_text(encoding="utf-8"))

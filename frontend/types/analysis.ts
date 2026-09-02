@@ -56,6 +56,31 @@ export interface IndexSummary {
   model: string;
 }
 
+export type StageState = "pending" | "running" | "completed" | "failed";
+
+export interface StageStatus {
+  name: string; // cloning | scanning | parsing | chunking | embedding | indexing
+  state: StageState;
+  detail?: string | null; // e.g. "1200/4000 chunks"
+}
+
+export interface AnalysisStatus {
+  session_id: string;
+  state: "running" | "completed" | "failed";
+  stages: StageStatus[];
+  error?: string | null;
+  started_at: string;
+  finished_at?: string | null;
+  repository: Record<string, string>;
+}
+
+/** POST /api/analyze now returns immediately; poll AnalysisStatus for progress. */
+export interface AnalyzeStarted {
+  session_id: string;
+  repository: { name: string; url: string };
+  state: "running";
+}
+
 export interface AnalyzeResponse {
   session_id: string;
   repository: { name: string; url: string };

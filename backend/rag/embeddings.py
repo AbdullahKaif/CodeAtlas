@@ -58,8 +58,17 @@ class SentenceTransformerModel(EmbeddingModel):
                     try:
                         from sentence_transformers import SentenceTransformer
 
-                        logger.info("Loading embedding model %s", self.name)
-                        self._model = SentenceTransformer(self.name, device="cpu")
+                        # Cached-first: once downloaded, the model loads with no
+                        # network traffic at all (local-first promise). Only a
+                        # cache miss falls through to the online path.
+                        try:
+                            logger.info("Loading embedding model %s (local cache)", self.name)
+                            self._model = SentenceTransformer(
+                                self.name, device="cpu", local_files_only=True
+                            )
+                        except Exception:
+                            logger.info("Model %s not cached; downloading once", self.name)
+                            self._model = SentenceTransformer(self.name, device="cpu")
                     except Exception as exc:
                         raise EmbeddingError(
                             f"Could not load embedding model '{self.name}'. First use needs "

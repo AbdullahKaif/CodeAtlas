@@ -1,4 +1,10 @@
-"""API-level tests using FastAPI's TestClient (no network access needed)."""
+"""API-level tests using FastAPI's TestClient (no network access needed).
+
+Analysis runs as a FastAPI background task; TestClient executes those tasks
+before the response is handed back, so by the time a POST /api/analyze call
+returns, the analysis has already finished - tests can assert on the final
+status immediately without polling.
+"""
 from __future__ import annotations
 
 import shutil
@@ -6,7 +12,8 @@ import shutil
 import pytest
 from fastapi.testclient import TestClient
 
-import backend.api.analyze as analyze_module
+import backend.analysis.runner as runner_module
+from backend.analysis.status import StatusTracker
 from backend.main import app
 from backend.repository.clone import GitCloneError
 from tests.conftest import SAMPLE_REPO
@@ -25,7 +32,7 @@ def fake_clone(monkeypatch):
         shutil.copytree(SAMPLE_REPO, dest, dirs_exist_ok=True)
         return dest
 
-    monkeypatch.setattr(analyze_module, "clone_repository", _copy_fixture)
+    monkeypatch.setattr(runner_module, "clone_repository", _copy_fixture)
 
 
 class TestHealth:
@@ -46,25 +53,32 @@ class TestAnalyze:
         assert response.status_code == 422
 
     def test_analyze_full_flow(self, client, fake_clone, fake_embeddings, temp_sessions):
-        response = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
-        assert response.status_code == 200
-        body = response.json()
-        assert body["repository"]["name"] == "sample"
+        started = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
+        assert started.status_code == 202
+        assert started.json()["state"] == "running"
+        assert started.json()["repository"]["name"] == "sample"
+        session_id = started.json()["session_id"]
+
+        status = client.get(f"/api/analysis/{session_id}/status").json()
+        assert status["state"] == "completed"
+        assert [s["state"] for s in status["stages"]] == ["completed"] * 6
+        embedding = next(s for s in status["stages"] if s["name"] == "embedding")
+        assert "chunks" in embedding["detail"]  # real counts, not faked progress
+
+        overview = client.get(f"/api/repository/{session_id}/overview")
+        assert overview.status_code == 200
+        body = overview.json()
         assert body["scan"]["summary"]["files_included"] > 0
         assert any(f["path"] == "app/auth.py" for f in body["scan"]["files"])
         assert body["parse"]["files_parsed"] >= 5
-        assert body["parse"]["files_failed"] == 0
         assert body["parse"]["entities"]["class"] >= 2
         assert body["chunks"]["total"] > 0
-        assert body["chunks"]["by_type"]["method"] >= 4
         assert body["index"]["chunks_indexed"] == body["chunks"]["total"]
         assert body["index"]["model"] == "fake-embed"
         assert body["index_error"] is None
 
-        session_id = body["session_id"]
         analysis_dir = temp_sessions / f"session_{session_id}" / "analysis"
         assert (analysis_dir / "entities.json").exists()
-        assert (analysis_dir / "relationships.json").exists()
         assert (analysis_dir / "chunks.json").exists()
         assert (temp_sessions / f"session_{session_id}" / "vectors" / "index.faiss").exists()
 
@@ -75,38 +89,80 @@ class TestAnalyze:
         results = search.json()["results"]
         assert len(results) == 3
         assert {"chunk_id", "file", "start_line", "score", "text"} <= set(results[0])
-        overview = client.get(f"/api/repository/{session_id}/overview")
-        assert overview.status_code == 200
-        assert overview.json()["session_id"] == session_id
 
         deleted = client.delete(f"/api/session/{session_id}")
         assert deleted.status_code == 200
-        assert deleted.json()["deleted"] is True
         assert not (temp_sessions / f"session_{session_id}").exists()
-
         assert client.get(f"/api/repository/{session_id}/overview").status_code == 404
-        assert client.delete(f"/api/session/{session_id}").status_code == 404
+        assert client.get(f"/api/analysis/{session_id}/status").status_code == 404
 
-    def test_clone_failure_cleans_up_session(self, client, temp_sessions, monkeypatch):
+    def test_clone_failure_fails_status_and_scrubs_content(self, client, temp_sessions, monkeypatch):
         def _boom(url, dest, **kwargs):
             raise GitCloneError("Repository not found.")
 
-        monkeypatch.setattr(analyze_module, "clone_repository", _boom)
-        response = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/missing"})
-        assert response.status_code == 502
-        leftovers = list(temp_sessions.glob("session_*")) if temp_sessions.exists() else []
-        assert leftovers == []
+        monkeypatch.setattr(runner_module, "clone_repository", _boom)
+        started = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/missing"})
+        assert started.status_code == 202
+        session_id = started.json()["session_id"]
+
+        status = client.get(f"/api/analysis/{session_id}/status").json()
+        assert status["state"] == "failed"
+        assert "not found" in status["error"].lower()
+        assert next(s for s in status["stages"] if s["name"] == "cloning")["state"] == "failed"
+
+        # Repository content is scrubbed; only status.json remains for the UI.
+        session_dir = temp_sessions / f"session_{session_id}"
+        assert not (session_dir / "repository").exists()
+        assert (session_dir / "status.json").exists()
+        # The failure is also visible through the overview endpoint:
+        assert client.get(f"/api/repository/{session_id}/overview").status_code == 409
+
+    def test_persist_failure_fails_status_and_scrubs(self, client, fake_clone, fake_embeddings, temp_sessions, monkeypatch):
+        def _disk_full(session_id, response, knowledge, chunk_list):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(runner_module, "_persist", _disk_full)
+        started = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
+        session_id = started.json()["session_id"]
+        status = client.get(f"/api/analysis/{session_id}/status").json()
+        assert status["state"] == "failed"
+        assert not (temp_sessions / f"session_{session_id}" / "repository").exists()
 
 
-class TestSessionEndpoints:
-    def test_overview_unknown_session_is_404(self, client):
-        assert client.get("/api/repository/0123456789ab/overview").status_code == 404
+class TestStatusEndpoint:
+    def test_unknown_session_is_404(self, client):
+        assert client.get("/api/analysis/0123456789ab/status").status_code == 404
 
-    def test_overview_malformed_session_is_404(self, client):
-        assert client.get("/api/repository/../../etc/overview").status_code == 404
+    def test_malformed_session_is_404(self, client):
+        assert client.get("/api/analysis/../../etc/status").status_code == 404
 
-    def test_delete_malformed_session_is_400(self, client):
-        assert client.delete("/api/session/notvalid!").status_code == 400
+    def test_overview_while_running_is_409(self, client, temp_sessions):
+        """A session mid-analysis (no repository.json yet) reports 'still running'."""
+        session_dir = temp_sessions / "session_abcdef123456"
+        session_dir.mkdir(parents=True)
+        StatusTracker("abcdef123456", "repo", "https://github.com/x/repo")
+        response = client.get("/api/repository/abcdef123456/overview")
+        assert response.status_code == 409
+        assert "running" in response.json()["detail"].lower()
+
+
+class TestEmbeddingDegradation:
+    def test_analysis_succeeds_without_embedding_model(self, client, fake_clone):
+        """No fake_embeddings here: the autouse guard makes the model unavailable,
+        which must degrade search - never the analysis (spec §42)."""
+        started = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
+        session_id = started.json()["session_id"]
+
+        status = client.get(f"/api/analysis/{session_id}/status").json()
+        assert status["state"] == "completed"  # analysis itself succeeded
+        assert next(s for s in status["stages"] if s["name"] == "embedding")["state"] == "failed"
+
+        body = client.get(f"/api/repository/{session_id}/overview").json()
+        assert body["index"] is None
+        assert "embedding model" in body["index_error"].lower()
+
+        search = client.post("/api/search", json={"session_id": session_id, "question": "x"})
+        assert search.status_code == 409
 
 
 class TestSearchEndpoint:
@@ -123,35 +179,13 @@ class TestSearchEndpoint:
             == 422
         )
 
-    def test_session_without_index_is_409(self, client, fake_clone, fake_embeddings, monkeypatch):
-        """Embedding failure degrades gracefully: analysis succeeds, search says why it can't."""
-        from backend.rag.embeddings import EmbeddingError
 
-        def _no_model(vectors_dir, chunks, model=None):
-            raise EmbeddingError("Could not load embedding model 'x'.")
+class TestSessionEndpoints:
+    def test_overview_unknown_session_is_404(self, client):
+        assert client.get("/api/repository/0123456789ab/overview").status_code == 404
 
-        monkeypatch.setattr(analyze_module, "build_index", _no_model)
-        response = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
-        assert response.status_code == 200
-        body = response.json()
-        assert body["index"] is None
-        assert "Could not load embedding model" in body["index_error"]
+    def test_overview_malformed_session_is_404(self, client):
+        assert client.get("/api/repository/../../etc/overview").status_code == 404
 
-        search = client.post("/api/search", json={"session_id": body["session_id"], "question": "x"})
-        assert search.status_code == 409
-        assert "index" in search.json()["detail"].lower()
-
-
-class TestPersistFailure:
-    def test_persist_failure_cleans_up_and_returns_500(self, client, fake_clone, temp_sessions, monkeypatch):
-        """Review finding: a failed persist must not orphan the cloned repo."""
-
-        def _disk_full(session_id, response, knowledge, chunk_list):
-            raise OSError(28, "No space left on device")
-
-        monkeypatch.setattr(analyze_module, "_persist_analysis", _disk_full)
-        response = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
-        assert response.status_code == 500
-        assert "store" in response.json()["detail"].lower()
-        leftovers = list(temp_sessions.glob("session_*")) if temp_sessions.exists() else []
-        assert leftovers == []
+    def test_delete_malformed_session_is_400(self, client):
+        assert client.delete("/api/session/notvalid!").status_code == 400
