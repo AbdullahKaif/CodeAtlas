@@ -69,16 +69,38 @@ class Relationship(BaseModel):
     line: int | None = None  # where the edge originates (e.g. the import statement)
 
 
+class ImportedName(BaseModel):
+    """One name bound by a from-import: ``login`` in ``from app.auth import login as l``."""
+
+    name: str  # the original name in the imported module ("*" for wildcards)
+    alias: str | None = None  # the local binding when aliased, else None
+
+
 class ImportStatement(BaseModel):
     """One import statement as written, before resolution to repository files.
 
     Kept separate from Relationship because most imports point outside the
-    repository; the resolver decides which become ``imports`` edges.
+    repository; the resolver decides which become ``imports`` edges. Aliases
+    are tracked because call resolution must map local bindings back to the
+    entities they name.
     """
 
     module: str | None  # dotted module ("app.auth"); None for pure-relative "from . import x"
-    names: list[str] = Field(default_factory=list)  # imported names; empty for "import m"
+    names: list[ImportedName] = Field(default_factory=list)  # empty for "import m"
+    alias: str | None = None  # local binding of a plain "import app.auth as aa"
     level: int = 0  # leading dots of a relative import
+    line: int
+
+
+class CallSite(BaseModel):
+    """One statically readable call expression: ``find_user(...)``, ``self.login(...)``.
+
+    ``callee`` is the dotted name as written; only plain identifier/attribute
+    chains are recorded - calls on computed expressions are not call sites.
+    """
+
+    caller: str  # entity ID of the innermost enclosing scope (file ID at module level)
+    callee: str
     line: int
 
 
@@ -87,6 +109,7 @@ class ParsedFile(BaseModel):
 
     entities: list[Entity]
     imports: list[ImportStatement]
+    calls: list[CallSite] = Field(default_factory=list)
     module_docstring: str | None = None
     had_syntax_errors: bool = False
 

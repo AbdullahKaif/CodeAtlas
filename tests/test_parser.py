@@ -96,7 +96,7 @@ class TestEntityExtraction:
 class TestImportExtraction:
     def test_all_import_forms(self):
         imports = parse_python_file(SOURCE, "app/service.py").imports
-        as_tuples = {(i.module, tuple(i.names), i.level) for i in imports}
+        as_tuples = {(i.module, tuple(n.name for n in i.names), i.level) for i in imports}
 
         assert ("app.base", ("BaseService",), 0) in as_tuples
         assert ("os", (), 0) in as_tuples
@@ -105,10 +105,49 @@ class TestImportExtraction:
         assert ("pkg", ("tools",), 2) in as_tuples  # from ..pkg import tools
         assert ("app.auth", ("*",), 0) in as_tuples
 
+    def test_aliases_are_tracked(self):
+        imports = parse_python_file(
+            b"import app.auth as aa\nfrom app.base import BaseService as BS\n", "x.py"
+        ).imports
+        plain = next(i for i in imports if not i.names)
+        assert (plain.module, plain.alias) == ("app.auth", "aa")
+        from_import = next(i for i in imports if i.names)
+        assert (from_import.names[0].name, from_import.names[0].alias) == ("BaseService", "BS")
+
     def test_import_lines_are_recorded(self):
         imports = parse_python_file(SOURCE, "app/service.py").imports
         base_import = next(i for i in imports if i.module == "app.base")
         assert base_import.line == 2
+
+
+class TestCallExtraction:
+    def test_call_sites_with_enclosing_scope(self):
+        source = b"""import helpers
+
+top_level()
+
+class Service:
+    def run(self):
+        self.helper()
+        check(validate())
+        helpers.fetch()
+
+def check(x):
+    return x
+"""
+        calls = parse_python_file(source, "app/x.py").calls
+        as_tuples = {(c.caller, c.callee) for c in calls}
+        assert ("app/x.py", "top_level") in as_tuples  # module-level caller is the file
+        assert ("app/x.py::Service.run", "self.helper") in as_tuples
+        assert ("app/x.py::Service.run", "check") in as_tuples
+        assert ("app/x.py::Service.run", "validate") in as_tuples  # nested in arguments
+        assert ("app/x.py::Service.run", "helpers.fetch") in as_tuples
+
+    def test_computed_callees_are_not_call_sites(self):
+        source = b"def f(handlers):\n    handlers[0]()\n    get()()\n"
+        calls = parse_python_file(source, "x.py").calls
+        # handlers[0]() and the outer get()() are unreadable; the inner get() is real.
+        assert [c.callee for c in calls] == ["get"]
 
 
 class TestBrokenInput:
