@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     chunk_max_chars: int = 2000
     chunk_overlap_lines: int = 5  # context carried between parts of a split chunk
 
+    # Embeddings / retrieval
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_batch_size: int = 32
+    top_k: int = 8  # default number of chunks returned by retrieval
+
     # API
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
