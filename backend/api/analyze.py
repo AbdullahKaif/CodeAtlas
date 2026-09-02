@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.knowledge.builder import KnowledgeBase, build_knowledge_base
-from backend.knowledge.serializer import write_knowledge_base
+from backend.knowledge.serializer import write_chunks, write_knowledge_base
 from backend.parser.models import ParseSummary
+from backend.rag.chunker import build_chunks
+from backend.rag.models import Chunk, ChunkSummary
 from backend.privacy.cleanup import delete_session
 from backend.repository.clone import (
     CloneError,
@@ -43,8 +45,9 @@ class AnalyzeResponse(BaseModel):
     session_id: str
     repository: RepositoryInfo
     scan: RepositoryScan
-    # None only for sessions persisted before the parsing stage existed.
+    # None only for sessions persisted before the respective stage existed.
     parse: ParseSummary | None = None
+    chunks: ChunkSummary | None = None
 
 
 class DeleteSessionResponse(BaseModel):
@@ -62,7 +65,9 @@ async def analyze_repository(request: AnalyzeRequest) -> AnalyzeResponse:
 
     session_id, repo_dir = create_session()
     try:
-        scan, knowledge = await run_in_threadpool(_clone_scan_parse, url, repo_dir)
+        scan, knowledge, chunk_list, chunk_summary = await run_in_threadpool(
+            _clone_scan_parse, url, repo_dir
+        )
     except RepoTooLargeError as exc:
         _cleanup_quietly(session_id)
         raise HTTPException(status_code=413, detail=str(exc)) from exc
@@ -86,9 +91,10 @@ async def analyze_repository(request: AnalyzeRequest) -> AnalyzeResponse:
         repository=RepositoryInfo(name=repo_name_from_url(url), url=url),
         scan=scan,
         parse=knowledge.summary,
+        chunks=chunk_summary,
     )
     try:
-        _persist_analysis(session_id, response, knowledge)
+        _persist_analysis(session_id, response, knowledge, chunk_list)
     except OSError as exc:
         # Without cleanup here the client would never learn the session id and
         # the cloned repository would be orphaned on disk - a privacy violation.
@@ -98,8 +104,10 @@ async def analyze_repository(request: AnalyzeRequest) -> AnalyzeResponse:
     return response
 
 
-def _clone_scan_parse(url: str, repo_dir) -> tuple[RepositoryScan, KnowledgeBase]:
-    """The synchronous analysis stages, in order: clone -> scan -> parse.
+def _clone_scan_parse(
+    url: str, repo_dir
+) -> tuple[RepositoryScan, KnowledgeBase, list[Chunk], ChunkSummary]:
+    """The synchronous analysis stages, in order: clone -> scan -> parse -> chunk.
 
     Kept as one ordered sequence so the Phase 3 move to background jobs with
     per-stage progress is a refactor of this function, not of the endpoint.
@@ -107,14 +115,18 @@ def _clone_scan_parse(url: str, repo_dir) -> tuple[RepositoryScan, KnowledgeBase
     clone_repository(url, repo_dir)
     scan = scan_repository(repo_dir)
     knowledge = build_knowledge_base(repo_dir, scan)
-    return scan, knowledge
+    chunk_list, chunk_summary = build_chunks(repo_dir, scan, knowledge.entities)
+    return scan, knowledge, chunk_list, chunk_summary
 
 
-def _persist_analysis(session_id: str, response: AnalyzeResponse, knowledge: KnowledgeBase) -> None:
-    """Store the analysis under the session: overview plus the knowledge base."""
+def _persist_analysis(
+    session_id: str, response: AnalyzeResponse, knowledge: KnowledgeBase, chunk_list: list[Chunk]
+) -> None:
+    """Store the analysis under the session: overview, knowledge base and chunks."""
     analysis_dir = settings.session_dir(session_id) / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
     write_knowledge_base(analysis_dir, knowledge)
+    write_chunks(analysis_dir, chunk_list)
     # Atomic write: a crash mid-write must not leave a truncated repository.json
     # behind (it would turn every later overview read into a 500).
     tmp_path = analysis_dir / "repository.json.tmp"

@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     max_file_size_bytes: int = 1_000_000  # skip reading content of files larger than this
     max_files: int = 10_000  # hard cap on files included in a scan
 
+    # Chunking (bge-small handles ~512 tokens; ~2000 chars keeps chunks within that)
+    chunk_max_chars: int = 2000
+    chunk_overlap_lines: int = 5  # context carried between parts of a split chunk
+
     # API
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 

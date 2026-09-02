@@ -43,12 +43,20 @@ export interface ParseSummary {
   relationships: Record<string, number>; // count per relation (contains/imports/...)
 }
 
+export interface ChunkSummary {
+  total: number;
+  by_type: Record<string, number>; // count per chunk type (function/method/class/module/...)
+  files_chunked: number;
+  oversized_split: number;
+}
+
 export interface AnalyzeResponse {
   session_id: string;
   repository: { name: string; url: string };
   scan: RepositoryScan;
-  /** Absent only for sessions persisted before the parsing stage existed. */
+  /** Absent only for sessions persisted before the respective stage existed. */
   parse?: ParseSummary | null;
+  chunks?: ChunkSummary | null;
 }
 
 /** A past analysis remembered in localStorage (client-side only, no code stored). */
