@@ -55,11 +55,14 @@ class TestAnalyze:
         assert body["parse"]["files_parsed"] >= 5
         assert body["parse"]["files_failed"] == 0
         assert body["parse"]["entities"]["class"] >= 2
+        assert body["chunks"]["total"] > 0
+        assert body["chunks"]["by_type"]["method"] >= 4
 
         session_id = body["session_id"]
         analysis_dir = temp_sessions / f"session_{session_id}" / "analysis"
         assert (analysis_dir / "entities.json").exists()
         assert (analysis_dir / "relationships.json").exists()
+        assert (analysis_dir / "chunks.json").exists()
         overview = client.get(f"/api/repository/{session_id}/overview")
         assert overview.status_code == 200
         assert overview.json()["session_id"] == session_id
@@ -98,7 +101,7 @@ class TestPersistFailure:
     def test_persist_failure_cleans_up_and_returns_500(self, client, fake_clone, temp_sessions, monkeypatch):
         """Review finding: a failed persist must not orphan the cloned repo."""
 
-        def _disk_full(session_id, response, knowledge):
+        def _disk_full(session_id, response, knowledge, chunk_list):
             raise OSError(28, "No space left on device")
 
         monkeypatch.setattr(analyze_module, "_persist_analysis", _disk_full)

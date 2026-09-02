@@ -33,7 +33,9 @@ Everything runs locally. Repository content is never sent to an external API.
 | - | Frontend dashboard (landing, overview, privacy settings) | Done |
 | 2a | Tree-sitter parsing, entities, `contains`/`imports` relationships | Done |
 | 2b | `inherits` and `calls` relationships | Done |
-| 3 | Chunking, embeddings, FAISS | Planned |
+| 3a | Semantic chunking (chunks.json) | Done |
+| 3b | Embeddings + FAISS + retrieval endpoint | Planned |
+| 3c | Background analysis with staged progress | Planned |
 | 4 | Ollama + Qwen3-Coder RAG chat | Planned |
 | 5 | Semgrep + Gitleaks security engine | Planned |
 | 6 | Architecture graph, impact analysis, onboarding | Planned |

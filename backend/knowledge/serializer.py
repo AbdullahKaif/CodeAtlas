@@ -11,9 +11,11 @@ from pathlib import Path
 
 from backend.knowledge.builder import KnowledgeBase
 from backend.parser.models import Entity, Relationship
+from backend.rag.models import Chunk
 
 ENTITIES_FILE = "entities.json"
 RELATIONSHIPS_FILE = "relationships.json"
+CHUNKS_FILE = "chunks.json"
 
 
 def write_knowledge_base(analysis_dir: Path, knowledge: KnowledgeBase) -> None:
@@ -26,6 +28,19 @@ def write_knowledge_base(analysis_dir: Path, knowledge: KnowledgeBase) -> None:
         analysis_dir / RELATIONSHIPS_FILE,
         {"relationships": [r.model_dump(mode="json") for r in knowledge.relationships]},
     )
+
+
+def write_chunks(analysis_dir: Path, chunks: list[Chunk]) -> None:
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    _write_atomic(
+        analysis_dir / CHUNKS_FILE,
+        {"chunks": [c.model_dump(mode="json") for c in chunks]},
+    )
+
+
+def load_chunks(analysis_dir: Path) -> list[Chunk]:
+    data = json.loads((analysis_dir / CHUNKS_FILE).read_text(encoding="utf-8"))
+    return [Chunk.model_validate(c) for c in data["chunks"]]
 
 
 def load_entities(analysis_dir: Path) -> list[Entity]:
