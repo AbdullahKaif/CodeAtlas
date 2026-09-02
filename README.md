@@ -31,7 +31,8 @@ Everything runs locally. Repository content is never sent to an external API.
 |-------|---------|--------|
 | 1 | Project setup, GitHub cloning, repository scanner | Done |
 | - | Frontend dashboard (landing, overview, privacy settings) | Done |
-| 2 | Tree-sitter parsing, entities, relationships | Planned |
+| 2a | Tree-sitter parsing, entities, `contains`/`imports` relationships | Done |
+| 2b | `inherits` and `calls` relationships | Planned |
 | 3 | Chunking, embeddings, FAISS | Planned |
 | 4 | Ollama + Qwen3-Coder RAG chat | Planned |
 | 5 | Semgrep + Gitleaks security engine | Planned |
@@ -91,8 +92,8 @@ different host/port, set `NEXT_PUBLIC_API_URL` - see `frontend/.env.local.exampl
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/analyze` | Clone a GitHub repo into an isolated session and scan it |
-| GET | `/api/repository/{session_id}/overview` | Read back the scan result |
+| POST | `/api/analyze` | Clone a GitHub repo into an isolated session, scan and parse it |
+| GET | `/api/repository/{session_id}/overview` | Read back the analysis result |
 | DELETE | `/api/session/{session_id}` | Delete all session data (privacy) |
 | GET | `/api/health` | Health check |
 
@@ -136,6 +137,8 @@ All settings can be overridden via `CODEATLAS_*` environment variables (see
 
 - Public GitHub repositories only (HTTPS, no SSH/private repos).
 - Python-first analysis; other languages are inventoried but not yet parsed.
+- Relationship extraction covers `contains` and `imports` so far; `inherits`
+  and `calls` land in the next phase (see `docs/adr/0001` for the model).
 - Long path support inside cloned repos is enabled for git itself
   (`core.longpaths`); scanning them additionally benefits from Windows
   long-path support being enabled.

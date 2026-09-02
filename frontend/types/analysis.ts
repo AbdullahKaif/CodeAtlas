@@ -32,10 +32,23 @@ export interface RepositoryScan {
   summary: ScanSummary;
 }
 
+export interface ParseSummary {
+  python_files: number;
+  files_parsed: number;
+  files_failed: number;
+  files_skipped_large: number;
+  files_with_syntax_errors: number;
+  failed_files: string[];
+  entities: Record<string, number>; // count per entity type (file/class/function/method)
+  relationships: Record<string, number>; // count per relation (contains/imports/...)
+}
+
 export interface AnalyzeResponse {
   session_id: string;
   repository: { name: string; url: string };
   scan: RepositoryScan;
+  /** Absent only for sessions persisted before the parsing stage existed. */
+  parse?: ParseSummary | null;
 }
 
 /** A past analysis remembered in localStorage (client-side only, no code stored). */

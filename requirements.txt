@@ -1,8 +1,10 @@
-# CodeAtlas backend - Phase 1 dependencies.
-# Later phases add: tree-sitter, sentence-transformers, faiss-cpu, semgrep, ollama client.
+# CodeAtlas backend - Phase 1 + 2 dependencies.
+# Later phases add: sentence-transformers, faiss-cpu, semgrep, ollama client.
 fastapi>=0.115
 uvicorn[standard]>=0.30
 gitpython>=3.1.43
 pydantic>=2.8
 pydantic-settings>=2.4
 httpx>=0.27
+tree-sitter>=0.23
+tree-sitter-python>=0.23

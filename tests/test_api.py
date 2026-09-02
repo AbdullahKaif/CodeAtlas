@@ -52,8 +52,14 @@ class TestAnalyze:
         assert body["repository"]["name"] == "sample"
         assert body["scan"]["summary"]["files_included"] > 0
         assert any(f["path"] == "app/auth.py" for f in body["scan"]["files"])
+        assert body["parse"]["files_parsed"] >= 5
+        assert body["parse"]["files_failed"] == 0
+        assert body["parse"]["entities"]["class"] >= 2
 
         session_id = body["session_id"]
+        analysis_dir = temp_sessions / f"session_{session_id}" / "analysis"
+        assert (analysis_dir / "entities.json").exists()
+        assert (analysis_dir / "relationships.json").exists()
         overview = client.get(f"/api/repository/{session_id}/overview")
         assert overview.status_code == 200
         assert overview.json()["session_id"] == session_id
@@ -92,10 +98,10 @@ class TestPersistFailure:
     def test_persist_failure_cleans_up_and_returns_500(self, client, fake_clone, temp_sessions, monkeypatch):
         """Review finding: a failed persist must not orphan the cloned repo."""
 
-        def _disk_full(session_id, response):
+        def _disk_full(session_id, response, knowledge):
             raise OSError(28, "No space left on device")
 
-        monkeypatch.setattr(analyze_module, "_persist_overview", _disk_full)
+        monkeypatch.setattr(analyze_module, "_persist_analysis", _disk_full)
         response = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
         assert response.status_code == 500
         assert "store" in response.json()["detail"].lower()
