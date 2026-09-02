@@ -60,6 +60,7 @@ def _no_real_embeddings(monkeypatch):
         raise EmbeddingError("Tests must not load a real embedding model; use fake_embeddings.")
 
     monkeypatch.setattr("backend.rag.retriever.get_embedding_model", _refuse)
+    monkeypatch.setattr("backend.analysis.runner.get_embedding_model", _refuse)
 
 
 @pytest.fixture
@@ -67,6 +68,7 @@ def fake_embeddings(_no_real_embeddings, monkeypatch):
     """Route every default-model lookup (indexing and querying) to the fake."""
     model = FakeEmbeddingModel()
     monkeypatch.setattr("backend.rag.retriever.get_embedding_model", lambda: model)
+    monkeypatch.setattr("backend.analysis.runner.get_embedding_model", lambda: model)
     return model
 
 

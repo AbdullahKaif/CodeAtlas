@@ -35,7 +35,7 @@ Everything runs locally. Repository content is never sent to an external API.
 | 2b | `inherits` and `calls` relationships | Done |
 | 3a | Semantic chunking (chunks.json) | Done |
 | 3b | Embeddings (bge-small) + FAISS + retrieval endpoint | Done |
-| 3c | Background analysis with staged progress | Planned |
+| 3c | Background analysis with staged progress | Done |
 | 4 | Ollama + Qwen3-Coder RAG chat | Planned |
 | 5 | Semgrep + Gitleaks security engine | Planned |
 | 6 | Architecture graph, impact analysis, onboarding | Planned |
@@ -99,7 +99,8 @@ different host/port, set `NEXT_PUBLIC_API_URL` - see `frontend/.env.local.exampl
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/analyze` | Clone a GitHub repo into an isolated session, scan, parse and index it |
+| POST | `/api/analyze` | Start a background analysis in an isolated session (202 + session id) |
+| GET | `/api/analysis/{session_id}/status` | Real per-stage progress (cloning ... embedding n/m chunks) |
 | POST | `/api/search` | Retrieve the chunks most similar to a question (local embeddings) |
 | GET | `/api/repository/{session_id}/overview` | Read back the analysis result |
 | DELETE | `/api/session/{session_id}` | Delete all session data (privacy) |

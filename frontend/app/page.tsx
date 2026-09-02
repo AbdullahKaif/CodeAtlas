@@ -2,9 +2,25 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { analyzeRepository, ApiError } from "@/lib/api";
+import { analyzeRepository, ApiError, getAnalysisStatus, getOverview } from "@/lib/api";
 import { listSessions, rememberSession } from "@/lib/sessions";
-import type { RecentSession } from "@/types/analysis";
+import type { AnalysisStatus, RecentSession } from "@/types/analysis";
+
+const STAGE_LABELS: Record<string, string> = {
+  cloning: "Cloning the repository",
+  scanning: "Scanning files",
+  parsing: "Parsing source code",
+  chunking: "Chunking for retrieval",
+  embedding: "Embedding chunks (local model)",
+  indexing: "Building the search index",
+};
+
+function describeProgress(status: AnalysisStatus): string {
+  const running = status.stages.find((s) => s.state === "running");
+  if (!running) return "Finishing up";
+  const label = STAGE_LABELS[running.name] ?? running.name;
+  return running.detail ? `${label} — ${running.detail}` : label;
+}
 
 const FEATURES: { title: string; text: string; soon?: boolean }[] = [
   { title: "Repository X-ray", text: "Clone and inventory any public GitHub repo: languages, entry points, structure." },
@@ -18,6 +34,7 @@ export default function LandingPage() {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentSession[]>([]);
 
@@ -43,11 +60,26 @@ export default function LandingPage() {
     if (!url.trim() || busy) return;
     setBusy(true);
     setElapsed(0);
+    setStage(null);
     setError(null);
     try {
-      const result = await analyzeRepository(url.trim());
-      rememberSession(result);
-      router.push(`/dashboard/${result.session_id}`);
+      const started = await analyzeRepository(url.trim());
+      // Analysis runs server-side in the background; poll the real per-stage
+      // progress until it settles.
+      let status = await getAnalysisStatus(started.session_id);
+      while (status.state === "running") {
+        setStage(describeProgress(status));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        status = await getAnalysisStatus(started.session_id);
+      }
+      if (status.state === "failed") {
+        setError(status.error ?? "Analysis failed.");
+        setBusy(false);
+        return;
+      }
+      const overview = await getOverview(started.session_id);
+      rememberSession(overview);
+      router.push(`/dashboard/${overview.session_id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
       setBusy(false);
@@ -88,8 +120,8 @@ export default function LandingPage() {
         {busy && (
           <div className="mt-4 flex items-center gap-3 rounded-lg border border-edge bg-surface px-4 py-3 text-sm text-ink-2">
             <span className="h-2 w-2 rounded-full bg-accent [animation:pulse-soft_1.2s_ease-in-out_infinite]" />
-            Cloning and scanning the repository locally
-            {elapsed >= 5 && ` — ${elapsed}s, large repositories can take a while`}
+            {stage ?? "Starting the analysis"}
+            {elapsed >= 5 && ` (${elapsed}s)`}
           </div>
         )}
         {error && (
