@@ -50,6 +50,12 @@ export interface ChunkSummary {
   oversized_split: number;
 }
 
+export interface IndexSummary {
+  chunks_indexed: number;
+  dimension: number;
+  model: string;
+}
+
 export interface AnalyzeResponse {
   session_id: string;
   repository: { name: string; url: string };
@@ -57,6 +63,9 @@ export interface AnalyzeResponse {
   /** Absent only for sessions persisted before the respective stage existed. */
   parse?: ParseSummary | null;
   chunks?: ChunkSummary | null;
+  /** null when embedding failed; index_error then explains why. */
+  index?: IndexSummary | null;
+  index_error?: string | null;
 }
 
 /** A past analysis remembered in localStorage (client-side only, no code stored). */

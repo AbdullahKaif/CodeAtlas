@@ -34,7 +34,7 @@ Everything runs locally. Repository content is never sent to an external API.
 | 2a | Tree-sitter parsing, entities, `contains`/`imports` relationships | Done |
 | 2b | `inherits` and `calls` relationships | Done |
 | 3a | Semantic chunking (chunks.json) | Done |
-| 3b | Embeddings + FAISS + retrieval endpoint | Planned |
+| 3b | Embeddings (bge-small) + FAISS + retrieval endpoint | Done |
 | 3c | Background analysis with staged progress | Planned |
 | 4 | Ollama + Qwen3-Coder RAG chat | Planned |
 | 5 | Semgrep + Gitleaks security engine | Planned |
@@ -51,6 +51,11 @@ Everything runs locally. Repository content is never sent to an external API.
 ## Backend setup (current)
 
 Requires Python 3.11+ and `git` on your PATH.
+
+> First analysis on a fresh machine downloads the embedding model
+> (`BAAI/bge-small-en-v1.5`, ~130 MB) from HuggingFace; afterwards everything
+> runs offline. If the model cannot load, analysis still completes - only
+> `/api/search` is unavailable (`index_error` in the response says why).
 
 ```bash
 python -m venv .venv
@@ -94,7 +99,8 @@ different host/port, set `NEXT_PUBLIC_API_URL` - see `frontend/.env.local.exampl
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/analyze` | Clone a GitHub repo into an isolated session, scan and parse it |
+| POST | `/api/analyze` | Clone a GitHub repo into an isolated session, scan, parse and index it |
+| POST | `/api/search` | Retrieve the chunks most similar to a question (local embeddings) |
 | GET | `/api/repository/{session_id}/overview` | Read back the analysis result |
 | DELETE | `/api/session/{session_id}` | Delete all session data (privacy) |
 | GET | `/api/health` | Health check |

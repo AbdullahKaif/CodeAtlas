@@ -45,7 +45,7 @@ class TestAnalyze:
         response = client.post("/api/analyze", json={})
         assert response.status_code == 422
 
-    def test_analyze_full_flow(self, client, fake_clone, temp_sessions):
+    def test_analyze_full_flow(self, client, fake_clone, fake_embeddings, temp_sessions):
         response = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
         assert response.status_code == 200
         body = response.json()
@@ -57,12 +57,24 @@ class TestAnalyze:
         assert body["parse"]["entities"]["class"] >= 2
         assert body["chunks"]["total"] > 0
         assert body["chunks"]["by_type"]["method"] >= 4
+        assert body["index"]["chunks_indexed"] == body["chunks"]["total"]
+        assert body["index"]["model"] == "fake-embed"
+        assert body["index_error"] is None
 
         session_id = body["session_id"]
         analysis_dir = temp_sessions / f"session_{session_id}" / "analysis"
         assert (analysis_dir / "entities.json").exists()
         assert (analysis_dir / "relationships.json").exists()
         assert (analysis_dir / "chunks.json").exists()
+        assert (temp_sessions / f"session_{session_id}" / "vectors" / "index.faiss").exists()
+
+        search = client.post(
+            "/api/search", json={"session_id": session_id, "question": "authentication", "top_k": 3}
+        )
+        assert search.status_code == 200
+        results = search.json()["results"]
+        assert len(results) == 3
+        assert {"chunk_id", "file", "start_line", "score", "text"} <= set(results[0])
         overview = client.get(f"/api/repository/{session_id}/overview")
         assert overview.status_code == 200
         assert overview.json()["session_id"] == session_id
@@ -95,6 +107,39 @@ class TestSessionEndpoints:
 
     def test_delete_malformed_session_is_400(self, client):
         assert client.delete("/api/session/notvalid!").status_code == 400
+
+
+class TestSearchEndpoint:
+    def test_unknown_session_is_404(self, client):
+        response = client.post("/api/search", json={"session_id": "0123456789ab", "question": "x"})
+        assert response.status_code == 404
+
+    def test_invalid_body_is_422(self, client):
+        assert client.post("/api/search", json={"session_id": "abc"}).status_code == 422
+        assert (
+            client.post(
+                "/api/search", json={"session_id": "abc", "question": "x", "top_k": 0}
+            ).status_code
+            == 422
+        )
+
+    def test_session_without_index_is_409(self, client, fake_clone, fake_embeddings, monkeypatch):
+        """Embedding failure degrades gracefully: analysis succeeds, search says why it can't."""
+        from backend.rag.embeddings import EmbeddingError
+
+        def _no_model(vectors_dir, chunks, model=None):
+            raise EmbeddingError("Could not load embedding model 'x'.")
+
+        monkeypatch.setattr(analyze_module, "build_index", _no_model)
+        response = client.post("/api/analyze", json={"repo_url": "https://github.com/octo/sample"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["index"] is None
+        assert "Could not load embedding model" in body["index_error"]
+
+        search = client.post("/api/search", json={"session_id": body["session_id"], "question": "x"})
+        assert search.status_code == 409
+        assert "index" in search.json()["detail"].lower()
 
 
 class TestPersistFailure:

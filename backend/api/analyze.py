@@ -13,7 +13,8 @@ from backend.knowledge.builder import KnowledgeBase, build_knowledge_base
 from backend.knowledge.serializer import write_chunks, write_knowledge_base
 from backend.parser.models import ParseSummary
 from backend.rag.chunker import build_chunks
-from backend.rag.models import Chunk, ChunkSummary
+from backend.rag.models import Chunk, ChunkSummary, IndexSummary
+from backend.rag.retriever import build_index
 from backend.privacy.cleanup import delete_session
 from backend.repository.clone import (
     CloneError,
@@ -48,6 +49,10 @@ class AnalyzeResponse(BaseModel):
     # None only for sessions persisted before the respective stage existed.
     parse: ParseSummary | None = None
     chunks: ChunkSummary | None = None
+    # index is None when embedding failed; index_error then says why (the rest
+    # of the analysis is still usable - spec §42, optional component failure).
+    index: IndexSummary | None = None
+    index_error: str | None = None
 
 
 class DeleteSessionResponse(BaseModel):
@@ -65,7 +70,7 @@ async def analyze_repository(request: AnalyzeRequest) -> AnalyzeResponse:
 
     session_id, repo_dir = create_session()
     try:
-        scan, knowledge, chunk_list, chunk_summary = await run_in_threadpool(
+        scan, knowledge, chunk_list, chunk_summary, index, index_error = await run_in_threadpool(
             _clone_scan_parse, url, repo_dir
         )
     except RepoTooLargeError as exc:
@@ -92,6 +97,8 @@ async def analyze_repository(request: AnalyzeRequest) -> AnalyzeResponse:
         scan=scan,
         parse=knowledge.summary,
         chunks=chunk_summary,
+        index=index,
+        index_error=index_error,
     )
     try:
         _persist_analysis(session_id, response, knowledge, chunk_list)
@@ -106,17 +113,28 @@ async def analyze_repository(request: AnalyzeRequest) -> AnalyzeResponse:
 
 def _clone_scan_parse(
     url: str, repo_dir
-) -> tuple[RepositoryScan, KnowledgeBase, list[Chunk], ChunkSummary]:
-    """The synchronous analysis stages, in order: clone -> scan -> parse -> chunk.
+) -> tuple[RepositoryScan, KnowledgeBase, list[Chunk], ChunkSummary, IndexSummary | None, str | None]:
+    """The synchronous analysis stages: clone -> scan -> parse -> chunk -> index.
 
-    Kept as one ordered sequence so the Phase 3 move to background jobs with
+    Kept as one ordered sequence so the Phase 3c move to background jobs with
     per-stage progress is a refactor of this function, not of the endpoint.
+    Embedding is the one optional stage: without a model the repository is
+    still cloned, parsed and chunked, and search alone is unavailable.
     """
     clone_repository(url, repo_dir)
     scan = scan_repository(repo_dir)
     knowledge = build_knowledge_base(repo_dir, scan)
     chunk_list, chunk_summary = build_chunks(repo_dir, scan, knowledge.entities)
-    return scan, knowledge, chunk_list, chunk_summary
+
+    index: IndexSummary | None = None
+    index_error: str | None = None
+    if chunk_list:
+        try:
+            index = build_index(repo_dir.parent / "vectors", chunk_list)
+        except Exception as exc:
+            logger.warning("Embedding/indexing failed; analysis continues without search: %s", exc)
+            index_error = str(exc)
+    return scan, knowledge, chunk_list, chunk_summary, index, index_error
 
 
 def _persist_analysis(

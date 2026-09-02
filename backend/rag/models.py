@@ -27,6 +27,20 @@ class Chunk(BaseModel):
     text: str
 
 
+class RetrievedChunk(Chunk):
+    """A chunk returned by retrieval, with its cosine similarity to the query."""
+
+    score: float
+
+
+class IndexSummary(BaseModel):
+    """What was embedded and indexed for a session."""
+
+    chunks_indexed: int
+    dimension: int
+    model: str
+
+
 class ChunkSummary(BaseModel):
     """Chunking counters for the analysis response."""
 
