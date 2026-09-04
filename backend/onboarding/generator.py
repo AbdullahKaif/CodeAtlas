@@ -137,14 +137,20 @@ def _readme_path(index: KnowledgeIndex) -> str | None:
 
 
 def _readme_description(index: KnowledgeIndex, readme: str) -> str | None:
-    """First paragraph of prose in the README (badges and headings skipped)."""
-    entity = index.entity(readme)
-    text = None
-    if entity is not None and entity.docstring:
-        text = entity.docstring
-    if text is None:
+    """First paragraph of prose in the README (headings, badges and HTML skipped)."""
+    text = index.readme_text
+    if not text:
         return None
-    return text.strip()[:400] or None
+    for block in re.split(r"\n\s*\n", text):
+        lines = [l.strip() for l in block.strip().split("\n")]
+        prose = [
+            l for l in lines
+            if l and not l.startswith(("#", "[![", "![", "<", "|", "```", "---", "===", ">"))
+        ]
+        paragraph = " ".join(prose).strip()
+        if len(paragraph) >= 20:
+            return paragraph[:400]
+    return None
 
 
 def _architecture(index: KnowledgeIndex) -> ArchitectureSummary:
@@ -304,11 +310,17 @@ def _stages(
     index: KnowledgeIndex, readme: str | None, important: list[FileRecommendation], security: SecurityReport | None
 ) -> list[OnboardingStage]:
     stages: list[OnboardingStage] = []
+
+    def stage(**kwargs) -> OnboardingStage:
+        kwargs["files"] = _unique(kwargs["files"])
+        kwargs["symbols"] = _unique(kwargs["symbols"])
+        return OnboardingStage(**kwargs)
+
     project_files = [p for p, f in sorted(index.files.items()) if f.is_project_file]
     entry = [p for p, f in sorted(index.files.items()) if f.is_entry_point]
 
     intro_files = ([readme] if readme else []) + project_files[:4] + entry[:2]
-    stages.append(OnboardingStage(
+    stages.append(stage(
         number="01", title="Understand the project", detected=bool(intro_files),
         explanation="What the project is for, how it is built and where it starts.",
         files=intro_files, symbols=[e.name for p in entry[:2] for e in index.by_file.get(p, [])[:3]],
@@ -316,7 +328,7 @@ def _stages(
     ))
 
     hubs = [r.path for r in important if any(x.startswith("imported by") for x in r.reasons)][:6]
-    stages.append(OnboardingStage(
+    stages.append(stage(
         number="02", title="Learn the architecture", detected=bool(hubs or len(index.source_files()) > 1),
         explanation="The modules everything else depends on, and how packages relate through imports.",
         files=hubs or [r.path for r in important[:5]],
@@ -325,11 +337,11 @@ def _stages(
     ))
 
     auth_files = _matching_files(index, _AUTH_WORDS)
-    stages.append(OnboardingStage(
+    stages.append(stage(
         number="03", title="Understand authentication", detected=bool(auth_files),
         explanation=(
             "How identity and access are handled: login, sessions, tokens, permissions."
-            if auth_files else "No authentication-related files or symbols were detected in this repository."
+            if auth_files else "Not detected: no authentication-related files or symbols were found in this repository."
         ),
         files=auth_files[:6], symbols=_symbols_for(index, auth_files, _AUTH_WORDS),
         questions=["How does authentication work?", "What happens when a user logs in?", "Where are credentials validated?"],
@@ -338,7 +350,7 @@ def _stages(
     logic_files = [p for p in _matching_files(index, _LOGIC_WORDS) if p not in auth_files]
     if not logic_files:
         logic_files = [r.path for r in important if r.path not in auth_files and r.path not in entry][:5]
-    stages.append(OnboardingStage(
+    stages.append(stage(
         number="04", title="Understand business logic", detected=bool(logic_files),
         explanation="Where the domain rules live: services, engines, processors and the classes they build on.",
         files=logic_files[:6], symbols=_symbols_for(index, logic_files, None),
@@ -346,11 +358,11 @@ def _stages(
     ))
 
     data_files = _matching_files(index, _DATA_WORDS)
-    stages.append(OnboardingStage(
+    stages.append(stage(
         number="05", title="Understand persistence", detected=bool(data_files),
         explanation=(
             "How data is stored and retrieved: connections, models, queries and migrations."
-            if data_files else "No persistence-related files or symbols were detected in this repository."
+            if data_files else "Not detected: no persistence-related files or symbols were found in this repository."
         ),
         files=data_files[:6], symbols=_symbols_for(index, data_files, _DATA_WORDS),
         questions=["Where is the database connection initialized?", "How are records read and written?"],
@@ -363,14 +375,19 @@ def _stages(
             f" The security scan reported {security.summary.total} finding"
             f"{'s' if security.summary.total != 1 else ''}; review the Security page alongside the tests."
         )
-    stages.append(OnboardingStage(
+    stages.append(stage(
         number="06", title="Understand testing and security", detected=bool(test_files) or security is not None,
-        explanation=("How behaviour is verified and where the risky code is." if test_files else "No test files were detected.") + security_note,
+        explanation=("How behaviour is verified and where the risky code is." if test_files else "Not detected: no test files were found.") + security_note,
         files=test_files[:6] + ([f.file for f in security.findings[:3]] if security else []),
         symbols=[e.id for p in test_files[:3] for e in index.by_file.get(p, []) if e.type == "function"][:6],
         questions=["How are the tests organised?", "Where are the main security risks?", "Which tests cover the authentication flow?"],
     ))
     return stages
+
+
+def _unique(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    return [x for x in items if not (x in seen or seen.add(x))]
 
 
 def _learning_path(stages: list[OnboardingStage]) -> list[LearningDay]:

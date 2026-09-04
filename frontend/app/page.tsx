@@ -28,7 +28,7 @@ const FEATURES: { title: string; text: string; soon?: boolean }[] = [
   { title: "Privacy first", text: "Everything runs on your machine. One click deletes every trace." },
   { title: "Grounded AI chat", text: "Ask how the code works. Answers come from a local model and cite verified file and line references." },
   { title: "Security scanning", text: "Semgrep + Gitleaks findings, secrets redacted, with AI explanations and fix suggestions." },
-  { title: "Architecture & impact", text: "Interactive dependency graph and change-impact analysis.", soon: true },
+  { title: "Architecture, impact & onboarding", text: "Interactive dependency graph, change-impact analysis and a guided learning path built from the code." },
 ];
 
 export default function LandingPage() {

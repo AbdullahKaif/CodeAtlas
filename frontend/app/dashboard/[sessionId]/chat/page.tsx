@@ -92,6 +92,16 @@ export default function ChatPage({ params }: { params: Promise<{ sessionId: stri
       setTurns(loadTurns(sessionId));
       setLoaded(true);
       checkHealth();
+      // Other pages link here with ?q=... to prefill a question.
+      try {
+        const prefill = new URLSearchParams(window.location.search).get("q");
+        if (prefill) {
+          setInput(prefill);
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+      } catch {
+        /* no window / malformed URL */
+      }
     });
     return () => {
       cancelled = true;

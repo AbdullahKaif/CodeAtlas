@@ -27,8 +27,10 @@ class KnowledgeIndex:
         relationships: list[Relationship],
         files: list[FileInfo],
         repo_name: str,
+        readme_text: str | None = None,
     ) -> None:
         self.repo_name = repo_name
+        self.readme_text = readme_text
         self.entities = entities
         self.relationships = relationships
         self.by_id: dict[str, Entity] = {e.id: e for e in entities}
@@ -141,10 +143,23 @@ def load_knowledge(session_dir: Path) -> KnowledgeIndex:
         repo_name = overview.get("repository", {}).get("name", repo_name)
     except (OSError, ValueError):
         pass
-    index = KnowledgeIndex(entities, relationships, files, repo_name)
+    index = KnowledgeIndex(entities, relationships, files, repo_name, _read_readme(session_dir, files))
 
     with _cache_lock:
         if len(_cache) >= _CACHE_SIZE:
             _cache.pop(next(iter(_cache)))
         _cache[key] = (mtime, index)
     return index
+
+
+def _read_readme(session_dir: Path, files: list[FileInfo]) -> str | None:
+    """The first few KB of the top-most README, for the onboarding overview."""
+    candidates = sorted(
+        (f.path for f in files if f.name.lower().startswith("readme")), key=lambda p: (p.count("/"), p)
+    )
+    for path in candidates:
+        try:
+            return (session_dir / "repository" / path).read_text(encoding="utf-8", errors="replace")[:4000]
+        except OSError:
+            continue
+    return None

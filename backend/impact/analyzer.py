@@ -95,7 +95,7 @@ def analyze_impact(index: KnowledgeIndex, target_id: str, depth: int = 2, max_af
         for via, edges in (
             ("calls", index.incoming["calls"].get(current, [])),
             ("inherits", index.incoming["inherits"].get(current, [])),
-            ("imports", index.incoming["imports"].get(_file_or_self(index, current), []) if level == 0 or via_file(index, current) else []),
+            ("imports", index.incoming["imports"].get(current, []) if via_file(index, current) else []),
         ):
             for edge in edges:
                 dependent_id = edge.source
@@ -115,7 +115,7 @@ def analyze_impact(index: KnowledgeIndex, target_id: str, depth: int = 2, max_af
                     file=entity.file,
                     start_line=entity.start_line,
                     via=via,  # type: ignore[arg-type]
-                    through=current if via != "imports" else _file_or_self(index, current),
+                    through=current,
                     depth=level + 1,
                     line=edge.line,
                     is_test=index.is_test(entity.file),
@@ -158,14 +158,10 @@ def analyze_impact(index: KnowledgeIndex, target_id: str, depth: int = 2, max_af
 
 
 def via_file(index: KnowledgeIndex, entity_id: str) -> bool:
-    """Only files have importers; imports of an entity's file are counted at depth 0 only."""
+    """Only files have importers. Importing a file is not, by itself, a dependency on
+    one particular function inside it - those show up as call/inherit edges instead."""
     entity = index.entity(entity_id)
     return entity is not None and entity.type == "file"
-
-
-def _file_or_self(index: KnowledgeIndex, entity_id: str) -> str:
-    entity = index.entity(entity_id)
-    return entity.file if entity is not None else entity_id
 
 
 def _assess(

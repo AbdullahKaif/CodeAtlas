@@ -238,3 +238,215 @@ export interface SecurityFix {
   generated_at: string;
   duration_seconds: number;
 }
+
+/* ---- Architecture graph (backend/architecture/graph.py) ---- */
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: "file" | "class" | "function" | "method";
+  file: string;
+  package: string;
+  language?: string | null;
+  is_test: boolean;
+  is_entry_point: boolean;
+  start_line?: number | null;
+  end_line?: number | null;
+  docstring?: string | null;
+  classes: number;
+  functions: number;
+  degree: number;
+}
+
+export type Relation = "imports" | "calls" | "inherits" | "contains";
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: Relation;
+  count: number;
+}
+
+export interface GraphStats {
+  level: "file" | "entity";
+  total_nodes: number;
+  total_edges: number;
+  shown_nodes: number;
+  shown_edges: number;
+  truncated: boolean;
+  focus?: string | null;
+  depth?: number | null;
+}
+
+export interface ArchitectureGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  packages: string[];
+  stats: GraphStats;
+  note: string;
+}
+
+/* ---- Entity search (backend/api/repository.py) ---- */
+
+export interface EntitySummary {
+  id: string;
+  type: string;
+  name: string;
+  file: string;
+  start_line: number;
+  end_line: number;
+  parent?: string | null;
+  signature?: string | null;
+  docstring?: string | null;
+  dependents: number;
+}
+
+export interface EntitySearchResponse {
+  session_id: string;
+  query: string;
+  results: EntitySummary[];
+  total_entities: number;
+}
+
+/* ---- Impact analysis (backend/impact) ---- */
+
+export type ImpactLevel = "HIGH" | "MEDIUM" | "LOW";
+
+export interface ImpactTarget {
+  id: string;
+  type: string;
+  name: string;
+  file: string;
+  start_line: number;
+  end_line: number;
+  signature?: string | null;
+  docstring?: string | null;
+  members: number;
+}
+
+export interface AffectedEntity {
+  id: string;
+  type: string;
+  name: string;
+  file: string;
+  start_line: number;
+  via: "calls" | "imports" | "inherits" | "member";
+  through: string;
+  depth: number;
+  line?: number | null;
+  is_test: boolean;
+}
+
+export interface ImpactResult {
+  target: ImpactTarget;
+  level: ImpactLevel;
+  reasons: string[];
+  affected: AffectedEntity[];
+  files: string[];
+  tests: string[];
+  counts: {
+    callers: number;
+    importers: number;
+    subclasses: number;
+    transitive: number;
+    files: number;
+    tests: number;
+  };
+  depth: number;
+  truncated: boolean;
+  note: string;
+}
+
+export interface ImpactExplanation {
+  target: string;
+  depth: number;
+  explanation: string;
+  sources: SourceReference[];
+  context: RetrievedChunk[];
+  references_removed: number;
+  model: string;
+  cached: boolean;
+  generated_at: string;
+  duration_seconds: number;
+  note: string;
+}
+
+/* ---- Onboarding (backend/onboarding) ---- */
+
+export interface FileRecommendation {
+  path: string;
+  reasons: string[];
+  score: number;
+  symbols: string[];
+}
+
+export interface KeyConcept {
+  name: string;
+  kind: string;
+  file?: string | null;
+  entity_id?: string | null;
+  summary?: string | null;
+}
+
+export interface ReadingStep {
+  order: number;
+  path: string;
+  why: string;
+  symbols: string[];
+}
+
+export interface OnboardingStage {
+  number: string;
+  title: string;
+  detected: boolean;
+  explanation: string;
+  files: string[];
+  symbols: string[];
+  questions: string[];
+}
+
+export interface LearningDay {
+  day: number;
+  theme: string;
+  files: string[];
+  goal: string;
+}
+
+export interface OnboardingGuide {
+  repository: string;
+  overview: {
+    name: string;
+    description?: string | null;
+    description_source?: string | null;
+    languages: Record<string, number>;
+    source_files: number;
+    classes: number;
+    functions: number;
+    entry_points: string[];
+    test_files: number;
+    project_files: string[];
+    security?: { total: number; critical: number; high: number; secrets: number } | null;
+  };
+  architecture: {
+    packages: { name: string; files: number; classes: number; functions: number }[];
+    hubs: { file: string; imported_by: number; imports: number }[];
+    relationship_counts: Record<string, number>;
+  };
+  important_files: FileRecommendation[];
+  reading_order: ReadingStep[];
+  key_concepts: KeyConcept[];
+  stages: OnboardingStage[];
+  learning_path: LearningDay[];
+  note: string;
+}
+
+export interface RepositorySummary {
+  summary: string;
+  sources: SourceReference[];
+  context: RetrievedChunk[];
+  references_removed: number;
+  model: string;
+  cached: boolean;
+  generated_at: string;
+}

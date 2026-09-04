@@ -7,9 +7,9 @@ const NAV: { label: string; segment: string | null; soon?: boolean }[] = [
   { label: "Overview", segment: "" },
   { label: "Security", segment: "security" },
   { label: "AI Chat", segment: "chat" },
-  { label: "Architecture", segment: null, soon: true },
-  { label: "Impact Analysis", segment: null, soon: true },
-  { label: "Onboarding", segment: null, soon: true },
+  { label: "Architecture", segment: "architecture" },
+  { label: "Impact Analysis", segment: "impact" },
+  { label: "Onboarding", segment: "onboarding" },
   { label: "Documentation", segment: null, soon: true },
   { label: "Settings", segment: "settings" },
 ];
