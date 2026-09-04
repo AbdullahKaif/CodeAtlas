@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 
 const NAV: { label: string; segment: string | null; soon?: boolean }[] = [
   { label: "Overview", segment: "" },
-  { label: "Security", segment: null, soon: true },
-  { label: "AI Chat", segment: null, soon: true },
+  { label: "Security", segment: "security" },
+  { label: "AI Chat", segment: "chat" },
   { label: "Architecture", segment: null, soon: true },
   { label: "Impact Analysis", segment: null, soon: true },
   { label: "Onboarding", segment: null, soon: true },

@@ -7,7 +7,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.analyze import router as analyze_router
+from backend.api.chat import router as chat_router
 from backend.api.search import router as search_router
+from backend.api.security import router as security_router
 from backend.config import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -27,6 +29,8 @@ app.add_middleware(
 
 app.include_router(analyze_router, prefix="/api", tags=["analysis"])
 app.include_router(search_router, prefix="/api", tags=["retrieval"])
+app.include_router(chat_router, prefix="/api", tags=["chat"])
+app.include_router(security_router, prefix="/api", tags=["security"])
 
 
 @app.get("/api/health")

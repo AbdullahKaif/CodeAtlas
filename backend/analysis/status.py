@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 STATUS_FILE = "status.json"
 
 # Pipeline order; the frontend renders these in sequence.
-STAGES = ["cloning", "scanning", "parsing", "chunking", "embedding", "indexing"]
+STAGES = ["cloning", "scanning", "parsing", "chunking", "embedding", "indexing", "security"]
 
 StageState = Literal["pending", "running", "completed", "failed"]
 

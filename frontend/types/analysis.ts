@@ -91,6 +91,9 @@ export interface AnalyzeResponse {
   /** null when embedding failed; index_error then explains why. */
   index?: IndexSummary | null;
   index_error?: string | null;
+  /** null when no scanner could run; scanner statuses say which tools ran. */
+  security?: SecurityOverview | null;
+  security_error?: string | null;
 }
 
 /** A past analysis remembered in localStorage (client-side only, no code stored). */
@@ -99,4 +102,139 @@ export interface RecentSession {
   name: string;
   url: string;
   analyzedAt: string;
+}
+
+/* ---- AI chat (backend/api/chat.py, backend/rag/pipeline.py) ---- */
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** A citation that survived validation against the knowledge base. */
+export interface SourceReference {
+  file: string;
+  start_line?: number | null;
+  end_line?: number | null;
+  symbol?: string | null;
+  chunk_id?: string | null;
+}
+
+/** A retrieved chunk shown to the model (the evidence behind an answer). */
+export interface RetrievedChunk {
+  chunk_id: string;
+  file: string;
+  symbol?: string | null;
+  entity_id?: string | null;
+  type: string;
+  start_line: number;
+  end_line: number;
+  part?: number | null;
+  text: string;
+  score: number;
+}
+
+export interface ChatAnswer {
+  session_id: string;
+  question: string;
+  answer: string;
+  sources: SourceReference[];
+  context: RetrievedChunk[];
+  references_removed: number;
+  model: string;
+  duration_seconds: number;
+}
+
+export interface LLMHealth {
+  reachable: boolean;
+  base_url: string;
+  model: string;
+  model_available: boolean;
+  available_models: string[];
+  ready: boolean;
+  message: string;
+}
+
+/* ---- Security (backend/security/models.py, backend/security/explain.py) ---- */
+
+export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
+export type ScannerName = "semgrep" | "gitleaks";
+
+export interface Finding {
+  id: string;
+  fingerprint: string;
+  severity: Severity;
+  category: "vulnerability" | "secret";
+  type: string;
+  file: string;
+  line: number;
+  end_line?: number | null;
+  column?: number | null;
+  end_column?: number | null;
+  source: ScannerName;
+  rule: string;
+  message: string;
+  code_context?: string | null;
+  cwe: string[];
+  owasp: string[];
+  references: string[];
+}
+
+export interface ScannerStatus {
+  name: ScannerName;
+  available: boolean;
+  version?: string | null;
+  ran: boolean;
+  findings: number;
+  duration_seconds?: number | null;
+  error?: string | null;
+  install_hint?: string | null;
+}
+
+export interface SecuritySummary {
+  total: number;
+  by_severity: Record<string, number>;
+  vulnerabilities: number;
+  secrets: number;
+}
+
+export interface SecurityReport {
+  session_id: string;
+  scanned_at: string;
+  scanners: ScannerStatus[];
+  summary: SecuritySummary;
+  findings: Finding[];
+  truncated: boolean;
+}
+
+export interface SecurityOverview {
+  summary: SecuritySummary;
+  scanners: ScannerStatus[];
+}
+
+export interface SecurityExplanation {
+  finding: Finding;
+  explanation: string;
+  sources: SourceReference[];
+  context: RetrievedChunk[];
+  references_removed: number;
+  model: string;
+  cached: boolean;
+  generated_at: string;
+  duration_seconds: number;
+}
+
+export interface SecurityFix {
+  finding: Finding;
+  explanation: string;
+  suggested_code: string;
+  diff: string;
+  side_effects: string;
+  region_start_line: number;
+  region_end_line: number;
+  disclaimer: string;
+  model: string;
+  cached: boolean;
+  generated_at: string;
+  duration_seconds: number;
 }

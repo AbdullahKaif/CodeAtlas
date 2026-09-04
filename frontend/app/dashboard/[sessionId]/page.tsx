@@ -1,6 +1,7 @@
 "use client";
 
 import { use } from "react";
+import Link from "next/link";
 import Card from "@/components/Card";
 import LanguageBars from "@/components/LanguageBars";
 import { ErrorPanel, LoadingPanel } from "@/components/LoadStates";
@@ -19,7 +20,7 @@ export default function OverviewPage({
   if (error) return <ErrorPanel message={error.message} gone={error.status === 404} />;
   if (!data) return <LoadingPanel />;
 
-  const { repository, scan } = data;
+  const { repository, scan, security } = data;
   const totalLines = scan.files.reduce((sum, f) => sum + (f.line_count ?? 0), 0);
   const testCount = scan.files.filter((f) => f.is_test_file).length;
   const largest = [...scan.files].sort((a, b) => b.size_bytes - a.size_bytes).slice(0, 8);
@@ -55,6 +56,46 @@ export default function OverviewPage({
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card
+          title="Security summary"
+          action={
+            <Link href={`/dashboard/${sessionId}/security`} className="text-xs text-accent hover:underline">
+              Open security →
+            </Link>
+          }
+        >
+          {security ? (
+            <>
+              <div className="grid grid-cols-5 gap-2">
+                {(["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const).map((level) => (
+                  <div key={level} className="rounded-lg border border-edge bg-raised p-2 text-center">
+                    <p className="text-lg font-semibold tabular-nums">
+                      {formatCount(security.summary.by_severity[level] ?? 0)}
+                    </p>
+                    <p className="text-[10px] uppercase tracking-wider text-ink-3">{level}</p>
+                  </div>
+                ))}
+                <div className="rounded-lg border border-edge bg-raised p-2 text-center">
+                  <p className="text-lg font-semibold tabular-nums">{formatCount(security.summary.secrets)}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-ink-3">Secrets</p>
+                </div>
+              </div>
+              <ul className="mt-3 space-y-0.5 text-xs text-ink-3">
+                {security.scanners.map((s) => (
+                  <li key={s.name}>
+                    {s.name === "semgrep" ? "Semgrep" : "Gitleaks"}:{" "}
+                    {s.ran ? `ran (${formatCount(s.findings)} findings)` : s.error ?? "did not run"}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-sm text-ink-3">
+              {data.security_error ?? "No security scan for this session. Re-analyze to run the scanners."}
+            </p>
+          )}
+        </Card>
+
         <Card title="Languages">
           <LanguageBars languages={scan.languages} />
         </Card>

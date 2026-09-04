@@ -7,8 +7,6 @@ status immediately without polling.
 """
 from __future__ import annotations
 
-import shutil
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -16,23 +14,11 @@ import backend.analysis.runner as runner_module
 from backend.analysis.status import StatusTracker
 from backend.main import app
 from backend.repository.clone import GitCloneError
-from tests.conftest import SAMPLE_REPO
 
 
 @pytest.fixture
 def client(temp_sessions):
     return TestClient(app)
-
-
-@pytest.fixture
-def fake_clone(monkeypatch):
-    """Replace the real git clone with a copy of the fixture repo."""
-
-    def _copy_fixture(url, dest, **kwargs):
-        shutil.copytree(SAMPLE_REPO, dest, dirs_exist_ok=True)
-        return dest
-
-    monkeypatch.setattr(runner_module, "clone_repository", _copy_fixture)
 
 
 class TestHealth:
@@ -61,7 +47,11 @@ class TestAnalyze:
 
         status = client.get(f"/api/analysis/{session_id}/status").json()
         assert status["state"] == "completed"
-        assert [s["state"] for s in status["stages"]] == ["completed"] * 6
+        assert [s["name"] for s in status["stages"]][-1] == "security"
+        assert [s["state"] for s in status["stages"]][:6] == ["completed"] * 6
+        # The security stage depends on which scanners are installed on this
+        # machine; either way it must have settled, never stayed pending.
+        assert status["stages"][-1]["state"] in {"completed", "failed"}
         embedding = next(s for s in status["stages"] if s["name"] == "embedding")
         assert "chunks" in embedding["detail"]  # real counts, not faked progress
 
@@ -76,6 +66,7 @@ class TestAnalyze:
         assert body["index"]["chunks_indexed"] == body["chunks"]["total"]
         assert body["index"]["model"] == "fake-embed"
         assert body["index_error"] is None
+        assert {s["name"] for s in body["security"]["scanners"]} == {"semgrep", "gitleaks"}
 
         analysis_dir = temp_sessions / f"session_{session_id}" / "analysis"
         assert (analysis_dir / "entities.json").exists()

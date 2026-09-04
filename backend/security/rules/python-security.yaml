@@ -1,0 +1,332 @@
+# CodeAtlas bundled Semgrep rules (Python). Curated for precision over recall:
+# every rule flags a concrete, well-understood unsafe pattern. They run fully
+# offline; registry packs (p/python, p/secrets, ...) can be added through
+# CODEATLAS_SEMGREP_EXTRA_CONFIGS when network access is acceptable.
+#
+# metadata.severity is CodeAtlas' unified severity; metadata.category=secret
+# marks rules whose matched string literals must be redacted.
+rules:
+  - id: codeatlas.python.sql-injection
+    languages: [python]
+    severity: ERROR
+    message: >-
+      SQL statement built from a variable with string concatenation or formatting and
+      passed to execute(). If any part of that value comes from a user, it can change the
+      query (SQL injection). Use parameterized queries (placeholders + a parameter tuple).
+    metadata:
+      title: SQL Injection
+      severity: CRITICAL
+      category: security
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      owasp: ["A03:2021 - Injection"]
+      references:
+        - https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
+    patterns:
+      - pattern-either:
+          - pattern: $CURSOR.execute("..." + $X, ...)
+          - pattern: $CURSOR.execute("..." + $X + "...", ...)
+          - pattern: $CURSOR.execute($X + "...", ...)
+          - pattern: $CURSOR.execute(f"...", ...)
+          - pattern: $CURSOR.execute("...".format(...), ...)
+          - pattern: $CURSOR.execute("..." % (...), ...)
+          - pattern: $CURSOR.execute("..." % $X, ...)
+          - pattern: $CURSOR.executescript("..." + $X, ...)
+          - pattern: $CURSOR.executescript(f"...", ...)
+          - pattern: $CURSOR.executescript("...".format(...), ...)
+          - pattern: $CURSOR.executescript("..." % (...), ...)
+          - pattern: $M.objects.raw("..." + $X, ...)
+          - pattern: $M.objects.raw(f"...", ...)
+          - pattern: $M.objects.raw("...".format(...), ...)
+          - pattern: $M.objects.raw("..." % (...), ...)
+          - pattern: |
+              $Q = "..." + $X
+              ...
+              $CURSOR.execute($Q, ...)
+          - pattern: |
+              $Q = "..." + $X + "..."
+              ...
+              $CURSOR.execute($Q, ...)
+          - pattern: |
+              $Q = "..." + $X + "..." + $Y
+              ...
+              $CURSOR.execute($Q, ...)
+          - pattern: |
+              $Q = "..." + $X + "..." + $Y + "..."
+              ...
+              $CURSOR.execute($Q, ...)
+          - pattern: |
+              $Q = f"..."
+              ...
+              $CURSOR.execute($Q, ...)
+          - pattern: |
+              $Q = "...".format(...)
+              ...
+              $CURSOR.execute($Q, ...)
+          - pattern: |
+              $Q = "..." % (...)
+              ...
+              $CURSOR.execute($Q, ...)
+          - pattern: |
+              $Q = "..." % $X
+              ...
+              $CURSOR.execute($Q, ...)
+          - pattern: |
+              $Q = "..."
+              ...
+              $Q += $X
+              ...
+              $CURSOR.execute($Q, ...)
+
+  - id: codeatlas.python.command-injection
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A shell command is built from a non-literal value and run through a shell
+      (shell=True, os.system, os.popen). If the value can be influenced by a user, it can
+      inject additional commands. Pass an argument list with shell=False, or validate the
+      value against an allow-list.
+    metadata:
+      title: Command Injection
+      severity: CRITICAL
+      category: security
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      owasp: ["A03:2021 - Injection"]
+      references:
+        - https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$FUNC($CMD, ..., shell=True, ...)
+          - pattern: os.system($CMD)
+          - pattern: os.popen($CMD, ...)
+      - pattern-not: subprocess.$FUNC("...", ..., shell=True, ...)
+      - pattern-not: os.system("...")
+      - pattern-not: os.popen("...", ...)
+      - pattern-not: subprocess.$FUNC(["...", ...], ..., shell=True, ...)
+
+  - id: codeatlas.python.code-injection-eval
+    languages: [python]
+    severity: ERROR
+    message: >-
+      eval()/exec() is called on a non-literal value. If that value can be influenced by a
+      user, arbitrary Python runs with the application's privileges. Use ast.literal_eval
+      for data, or a safe dispatch table for behaviour.
+    metadata:
+      title: Code Injection
+      severity: HIGH
+      category: security
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code ('Eval Injection')"]
+      owasp: ["A03:2021 - Injection"]
+    patterns:
+      - pattern-either:
+          - pattern: eval($X, ...)
+          - pattern: exec($X, ...)
+      - pattern-not: eval("...", ...)
+      - pattern-not: exec("...", ...)
+
+  - id: codeatlas.python.insecure-deserialization-pickle
+    languages: [python]
+    severity: ERROR
+    message: >-
+      pickle/dill/shelve deserialization executes code embedded in the data. Loading data
+      from an untrusted source (request bodies, files users can write, message queues)
+      allows remote code execution. Prefer JSON or another data-only format.
+    metadata:
+      title: Insecure Deserialization
+      severity: HIGH
+      category: security
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      owasp: ["A08:2021 - Software and Data Integrity Failures"]
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+      - pattern: cPickle.load(...)
+      - pattern: cPickle.loads(...)
+      - pattern: dill.load(...)
+      - pattern: dill.loads(...)
+      - pattern: shelve.open(...)
+
+  - id: codeatlas.python.yaml-unsafe-load
+    languages: [python]
+    severity: ERROR
+    message: >-
+      yaml.load without a safe loader (or with yaml.Loader/UnsafeLoader) can instantiate
+      arbitrary Python objects from the document, which is code execution for untrusted
+      input. Use yaml.safe_load or Loader=yaml.SafeLoader.
+    metadata:
+      title: Unsafe YAML Deserialization
+      severity: HIGH
+      category: security
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      owasp: ["A08:2021 - Software and Data Integrity Failures"]
+    pattern-either:
+      - pattern: yaml.load($X)
+      - pattern: yaml.load($X, Loader=yaml.Loader)
+      - pattern: yaml.load($X, Loader=yaml.UnsafeLoader)
+      - pattern: yaml.load($X, Loader=yaml.FullLoader)
+      - pattern: yaml.load($X, yaml.Loader)
+      - pattern: yaml.load($X, yaml.UnsafeLoader)
+      - pattern: yaml.unsafe_load(...)
+
+  - id: codeatlas.python.tls-verification-disabled
+    languages: [python]
+    severity: ERROR
+    message: >-
+      TLS certificate verification is disabled, so the connection can be intercepted by
+      anyone on the network path (man-in-the-middle). Keep verification on and, if needed,
+      point it at the correct CA bundle instead.
+    metadata:
+      title: TLS Verification Disabled
+      severity: HIGH
+      category: security
+      cwe: ["CWE-295: Improper Certificate Validation"]
+      owasp: ["A02:2021 - Cryptographic Failures"]
+    pattern-either:
+      - pattern: requests.$METHOD(..., verify=False, ...)
+      - pattern: $SESSION.verify = False
+      - pattern: httpx.$METHOD(..., verify=False, ...)
+      - pattern: httpx.Client(..., verify=False, ...)
+      - pattern: httpx.AsyncClient(..., verify=False, ...)
+      - pattern: ssl._create_unverified_context(...)
+      - pattern: $CTX.check_hostname = False
+      - pattern: $CTX.verify_mode = ssl.CERT_NONE
+
+  - id: codeatlas.python.jwt-signature-not-verified
+    languages: [python]
+    severity: ERROR
+    message: >-
+      The JWT is decoded without verifying its signature, so any client can forge tokens
+      with arbitrary claims. Verify the signature with the expected key and algorithm.
+    metadata:
+      title: JWT Signature Not Verified
+      severity: HIGH
+      category: security
+      cwe: ["CWE-347: Improper Verification of Cryptographic Signature"]
+      owasp: ["A07:2021 - Identification and Authentication Failures"]
+    pattern-either:
+      - pattern: jwt.decode(..., verify=False, ...)
+      - pattern: 'jwt.decode(..., options={..., "verify_signature": False, ...}, ...)'
+
+  - id: codeatlas.python.flask-template-injection
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A Jinja template string is built from a variable and rendered. If the variable is
+      user-controlled this is server-side template injection (and XSS), which can lead to
+      code execution. Render a fixed template and pass the value as a template variable.
+    metadata:
+      title: Server-Side Template Injection
+      severity: HIGH
+      category: security
+      cwe: ["CWE-1336: Improper Neutralization of Special Elements Used in a Template Engine"]
+      owasp: ["A03:2021 - Injection"]
+    patterns:
+      - pattern-either:
+          - pattern: flask.render_template_string("..." + $X, ...)
+          - pattern: flask.render_template_string($X + "...", ...)
+          - pattern: flask.render_template_string(f"...", ...)
+          - pattern: flask.render_template_string("...".format(...), ...)
+          - pattern: flask.render_template_string("..." % (...), ...)
+          - pattern: render_template_string("..." + $X, ...)
+          - pattern: render_template_string($X + "...", ...)
+          - pattern: render_template_string(f"...", ...)
+          - pattern: render_template_string("...".format(...), ...)
+          - pattern: render_template_string("..." % (...), ...)
+          - pattern: jinja2.Template("..." + $X, ...)
+          - pattern: jinja2.Template(f"...", ...)
+          - pattern: jinja2.Template("...".format(...), ...)
+
+  - id: codeatlas.python.flask-debug-enabled
+    languages: [python]
+    severity: WARNING
+    message: >-
+      The Flask app runs with debug=True, which exposes the Werkzeug interactive debugger.
+      Anyone who can reach it can execute code on the server. Never enable debug mode in
+      a deployed application.
+    metadata:
+      title: Debug Mode Enabled
+      severity: MEDIUM
+      category: security
+      cwe: ["CWE-489: Active Debug Code"]
+      owasp: ["A05:2021 - Security Misconfiguration"]
+    pattern: $APP.run(..., debug=True, ...)
+
+  - id: codeatlas.python.bind-all-interfaces
+    languages: [python]
+    severity: INFO
+    message: >-
+      The server binds to 0.0.0.0 (every network interface). Fine inside a container, but
+      on a developer machine or a multi-homed host it exposes the service to the network.
+      Bind to 127.0.0.1 unless external access is intended.
+    metadata:
+      title: Binds to All Interfaces
+      severity: LOW
+      category: security
+      cwe: ["CWE-668: Exposure of Resource to Wrong Sphere"]
+      owasp: ["A05:2021 - Security Misconfiguration"]
+    pattern-either:
+      - pattern: $APP.run(..., host="0.0.0.0", ...)
+      - pattern: $SOCK.bind(("0.0.0.0", ...))
+      - pattern: uvicorn.run(..., host="0.0.0.0", ...)
+
+  - id: codeatlas.python.weak-hash
+    languages: [python]
+    severity: WARNING
+    message: >-
+      MD5/SHA-1 are cryptographically broken. They are acceptable for checksums of
+      non-sensitive data but must not protect passwords, tokens or signatures. For
+      passwords use a slow hash (bcrypt, scrypt, argon2); otherwise use SHA-256 or better.
+    metadata:
+      title: Weak Cryptographic Hash
+      severity: MEDIUM
+      category: security
+      cwe: ["CWE-328: Use of Weak Hash"]
+      owasp: ["A02:2021 - Cryptographic Failures"]
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)
+      - pattern: hashlib.new("md5", ...)
+      - pattern: hashlib.new("sha1", ...)
+
+  - id: codeatlas.python.insecure-temp-file
+    languages: [python]
+    severity: WARNING
+    message: >-
+      tempfile.mktemp only returns a name; another process can create that file before
+      this code does (race condition / symlink attack). Use tempfile.mkstemp or
+      NamedTemporaryFile, which create the file atomically.
+    metadata:
+      title: Insecure Temporary File
+      severity: MEDIUM
+      category: security
+      cwe: ["CWE-377: Insecure Temporary File"]
+      owasp: ["A01:2021 - Broken Access Control"]
+    pattern: tempfile.mktemp(...)
+
+  - id: codeatlas.python.hardcoded-credential
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A credential-looking name is assigned a string literal. Hard-coded passwords, keys
+      and tokens end up in version control and every copy of the code. Read them from the
+      environment or a secrets manager instead.
+    metadata:
+      title: Hard-coded Credential
+      severity: HIGH
+      category: secret
+      cwe: ["CWE-798: Use of Hard-coded Credentials"]
+      owasp: ["A07:2021 - Identification and Authentication Failures"]
+    patterns:
+      - pattern-either:
+          - pattern: $NAME = "..."
+          - pattern: '$NAME: $TYPE = "..."'
+          - pattern: $F(..., $NAME="...", ...)
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i)^(?:.*_)?(password|passwd|pwd|secret|secret_key|api_key|apikey|access_key|auth_token|token|private_key|client_secret)(?:_\w+)?$
+      - pattern-not: $NAME = ""
+      - pattern-not: '$NAME: $TYPE = ""'
+      - pattern-not: $F(..., $NAME="", ...)
+      - metavariable-pattern:
+          metavariable: $NAME
+          patterns:
+            - pattern-not-regex: (?i)(name|header|field|key_id|_url|_path|_file|_env|_var|prefix|suffix|type|length|algorithm)$

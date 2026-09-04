@@ -13,6 +13,7 @@ const STAGE_LABELS: Record<string, string> = {
   chunking: "Chunking for retrieval",
   embedding: "Embedding chunks (local model)",
   indexing: "Building the search index",
+  security: "Scanning for vulnerabilities and secrets",
 };
 
 function describeProgress(status: AnalysisStatus): string {
@@ -25,8 +26,9 @@ function describeProgress(status: AnalysisStatus): string {
 const FEATURES: { title: string; text: string; soon?: boolean }[] = [
   { title: "Repository X-ray", text: "Clone and inventory any public GitHub repo: languages, entry points, structure." },
   { title: "Privacy first", text: "Everything runs on your machine. One click deletes every trace." },
-  { title: "Security scanning", text: "Semgrep + Gitleaks findings with AI explanations.", soon: true },
-  { title: "AI chat & graph", text: "Ask questions, explore architecture, plan changes.", soon: true },
+  { title: "Grounded AI chat", text: "Ask how the code works. Answers come from a local model and cite verified file and line references." },
+  { title: "Security scanning", text: "Semgrep + Gitleaks findings, secrets redacted, with AI explanations and fix suggestions." },
+  { title: "Architecture & impact", text: "Interactive dependency graph and change-impact analysis.", soon: true },
 ];
 
 export default function LandingPage() {
