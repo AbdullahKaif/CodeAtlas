@@ -38,7 +38,7 @@ Everything runs locally. Repository content is never sent to an external API.
 | 3c | Background analysis with staged progress | Done |
 | 4 | Ollama + Qwen3-Coder RAG chat with validated source references | Done |
 | 5 | Semgrep + Gitleaks security engine, AI explanations and fix suggestions | Done |
-| 6 | Architecture graph, impact analysis, onboarding | Planned |
+| 6 | Architecture graph, impact analysis, onboarding (New Developer Mode) | Done |
 | 7 | Documentation and test generation | Planned |
 | 8 | Frontend polish, privacy, demo | Planned |
 
@@ -145,6 +145,12 @@ different host/port, set `NEXT_PUBLIC_API_URL` - see `frontend/.env.local.exampl
 | GET | `/api/security/{session_id}` | Normalized Semgrep + Gitleaks findings (secrets redacted) with scanner statuses |
 | POST | `/api/security/explain` | AI explanation of one finding (what, why, impact, data flow, remediation), cached per session |
 | POST | `/api/security/fix` | AI fix suggestion: explanation, corrected region, unified diff, side effects; never applied |
+| GET | `/api/architecture/{session_id}` | File-level dependency graph (`?focus=<id>&depth=` for an entity neighbourhood) for React Flow |
+| GET | `/api/repository/{session_id}/entities?q=` | Entity search for pickers; empty query lists the most depended-upon entities |
+| POST | `/api/impact` | Static callers, importers, subclasses and transitive dependents of a file/class/function/method |
+| POST | `/api/impact/explain` | AI reading of the static impact result (consequences, checks, tests), citations validated |
+| GET | `/api/onboarding/{session_id}` | Evidence-based guide: overview, important files, reading order, stages, learning path |
+| POST | `/api/onboarding/summary` | AI repository summary grounded in retrieved docs and code (cached per session) |
 | GET | `/api/repository/{session_id}/overview` | Read back the analysis result |
 | DELETE | `/api/session/{session_id}` | Delete all session data (privacy) |
 | GET | `/api/health` | Health check |
@@ -193,6 +199,18 @@ not require network access.
 - Fix suggestions are returned as a unified diff and labelled AI-generated;
   nothing is ever written to the cloned repository.
 
+## How the graph, impact and onboarding stay honest
+
+- The architecture graph shows only edges the parser proved: resolved imports,
+  resolved calls and inheritance. Large graphs are cut deterministically
+  (most connected files first) and the response says so.
+- Impact analysis follows those same edges in reverse. Importing a file is
+  not counted as a dependency on one function inside it; only call and
+  inheritance edges are. The result is labelled a static lower bound.
+- Onboarding recommendations only name files and symbols that exist in the
+  knowledge base; a stage with no evidence (for example no authentication
+  code) is marked "not detected" instead of being filled in.
+
 ## How AI answers stay honest
 
 - The model only ever sees the top-k retrieved chunks that fit a fixed context
@@ -236,4 +254,4 @@ The LLM settings also accept the bare names from the spec: `OLLAMA_BASE_URL`,
   mode, weak hashes, insecure temp files, hard-coded credentials). Registry
   packs extend coverage when network access is acceptable.
 - Gitleaks scans the checked-out files, not the git history (clones are shallow).
-- The architecture graph, impact analysis and onboarding are not implemented yet.
+- Documentation and test generation (Phase 7) are not implemented yet.

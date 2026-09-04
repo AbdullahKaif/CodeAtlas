@@ -5,6 +5,12 @@ import type {
   ChatAnswer,
   ChatMessage,
   LLMHealth,
+  ArchitectureGraph,
+  EntitySearchResponse,
+  ImpactExplanation,
+  ImpactResult,
+  OnboardingGuide,
+  RepositorySummary,
   SecurityExplanation,
   SecurityFix,
   SecurityReport,
@@ -110,5 +116,62 @@ export function suggestFix(
   return request<SecurityFix>("/api/security/fix", {
     method: "POST",
     body: JSON.stringify({ session_id: sessionId, finding_id: findingId, refresh }),
+  });
+}
+
+export function getArchitecture(
+  sessionId: string,
+  options: { focus?: string; depth?: number; maxNodes?: number } = {},
+): Promise<ArchitectureGraph> {
+  const params = new URLSearchParams();
+  if (options.focus) params.set("focus", options.focus);
+  if (options.depth) params.set("depth", String(options.depth));
+  if (options.maxNodes) params.set("max_nodes", String(options.maxNodes));
+  const query = params.toString();
+  return request<ArchitectureGraph>(
+    `/api/architecture/${encodeURIComponent(sessionId)}${query ? `?${query}` : ""}`,
+  );
+}
+
+export function searchEntities(
+  sessionId: string,
+  q: string,
+  options: { limit?: number; types?: string[] } = {},
+): Promise<EntitySearchResponse> {
+  const params = new URLSearchParams({ q });
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.types?.length) params.set("types", options.types.join(","));
+  return request<EntitySearchResponse>(
+    `/api/repository/${encodeURIComponent(sessionId)}/entities?${params.toString()}`,
+  );
+}
+
+export function analyzeImpact(sessionId: string, target: string, depth = 2): Promise<ImpactResult> {
+  return request<ImpactResult>("/api/impact", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, target, depth }),
+  });
+}
+
+export function explainImpact(
+  sessionId: string,
+  target: string,
+  depth = 2,
+  refresh = false,
+): Promise<ImpactExplanation> {
+  return request<ImpactExplanation>("/api/impact/explain", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, target, depth, refresh }),
+  });
+}
+
+export function getOnboarding(sessionId: string): Promise<OnboardingGuide> {
+  return request<OnboardingGuide>(`/api/onboarding/${encodeURIComponent(sessionId)}`);
+}
+
+export function getRepositorySummary(sessionId: string, refresh = false): Promise<RepositorySummary> {
+  return request<RepositorySummary>("/api/onboarding/summary", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, refresh }),
   });
 }
