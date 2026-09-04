@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 
 import pytest
 
@@ -38,6 +39,7 @@ class TestDeleteSession:
 
 
 class TestDeleteRetries:
+    @pytest.mark.skipif(sys.platform != "win32", reason="only Windows locks open files")
     def test_locked_file_raises_after_retries(self, temp_sessions, monkeypatch):
         """An open file handle (Windows lock) should surface as OSError, fast."""
         import backend.privacy.cleanup as cleanup_module

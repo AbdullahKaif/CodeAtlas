@@ -1,4 +1,11 @@
-import type { AnalysisStatus, AnalyzeResponse, AnalyzeStarted } from "@/types/analysis";
+import type {
+  AnalysisStatus,
+  AnalyzeResponse,
+  AnalyzeStarted,
+  ChatAnswer,
+  ChatMessage,
+  LLMHealth,
+} from "@/types/analysis";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -59,5 +66,20 @@ export function deleteSession(
 ): Promise<{ session_id: string; deleted: boolean }> {
   return request(`/api/session/${encodeURIComponent(sessionId)}`, {
     method: "DELETE",
+  });
+}
+
+export function getLLMHealth(): Promise<LLMHealth> {
+  return request<LLMHealth>("/api/llm/health");
+}
+
+export function askQuestion(
+  sessionId: string,
+  question: string,
+  history: ChatMessage[] = [],
+): Promise<ChatAnswer> {
+  return request<ChatAnswer>("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, question, history }),
   });
 }

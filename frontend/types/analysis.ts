@@ -100,3 +100,54 @@ export interface RecentSession {
   url: string;
   analyzedAt: string;
 }
+
+/* ---- AI chat (backend/api/chat.py, backend/rag/pipeline.py) ---- */
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** A citation that survived validation against the knowledge base. */
+export interface SourceReference {
+  file: string;
+  start_line?: number | null;
+  end_line?: number | null;
+  symbol?: string | null;
+  chunk_id?: string | null;
+}
+
+/** A retrieved chunk shown to the model (the evidence behind an answer). */
+export interface RetrievedChunk {
+  chunk_id: string;
+  file: string;
+  symbol?: string | null;
+  entity_id?: string | null;
+  type: string;
+  start_line: number;
+  end_line: number;
+  part?: number | null;
+  text: string;
+  score: number;
+}
+
+export interface ChatAnswer {
+  session_id: string;
+  question: string;
+  answer: string;
+  sources: SourceReference[];
+  context: RetrievedChunk[];
+  references_removed: number;
+  model: string;
+  duration_seconds: number;
+}
+
+export interface LLMHealth {
+  reachable: boolean;
+  base_url: string;
+  model: string;
+  model_available: boolean;
+  available_models: string[];
+  ready: boolean;
+  message: string;
+}

@@ -7,8 +7,6 @@ status immediately without polling.
 """
 from __future__ import annotations
 
-import shutil
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -16,23 +14,11 @@ import backend.analysis.runner as runner_module
 from backend.analysis.status import StatusTracker
 from backend.main import app
 from backend.repository.clone import GitCloneError
-from tests.conftest import SAMPLE_REPO
 
 
 @pytest.fixture
 def client(temp_sessions):
     return TestClient(app)
-
-
-@pytest.fixture
-def fake_clone(monkeypatch):
-    """Replace the real git clone with a copy of the fixture repo."""
-
-    def _copy_fixture(url, dest, **kwargs):
-        shutil.copytree(SAMPLE_REPO, dest, dirs_exist_ok=True)
-        return dest
-
-    monkeypatch.setattr(runner_module, "clone_repository", _copy_fixture)
 
 
 class TestHealth:

@@ -25,8 +25,8 @@ function describeProgress(status: AnalysisStatus): string {
 const FEATURES: { title: string; text: string; soon?: boolean }[] = [
   { title: "Repository X-ray", text: "Clone and inventory any public GitHub repo: languages, entry points, structure." },
   { title: "Privacy first", text: "Everything runs on your machine. One click deletes every trace." },
+  { title: "Grounded AI chat", text: "Ask how the code works. Answers come from a local model and cite verified file and line references." },
   { title: "Security scanning", text: "Semgrep + Gitleaks findings with AI explanations.", soon: true },
-  { title: "AI chat & graph", text: "Ask questions, explore architecture, plan changes.", soon: true },
 ];
 
 export default function LandingPage() {

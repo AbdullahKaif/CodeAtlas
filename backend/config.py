@@ -4,7 +4,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -46,6 +46,27 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_batch_size: int = 32
     top_k: int = 8  # default number of chunks returned by retrieval
+
+    # Local LLM (Ollama). The spec names these OLLAMA_BASE_URL / OLLAMA_MODEL /
+    # LLM_TIMEOUT; both the bare names and the CODEATLAS_-prefixed forms work.
+    ollama_base_url: str = Field(
+        default="http://127.0.0.1:11434",
+        validation_alias=AliasChoices("CODEATLAS_OLLAMA_BASE_URL", "OLLAMA_BASE_URL"),
+    )
+    ollama_model: str = Field(
+        default="qwen3-coder",
+        validation_alias=AliasChoices("CODEATLAS_OLLAMA_MODEL", "OLLAMA_MODEL"),
+    )
+    llm_timeout_seconds: float = Field(
+        default=180.0,
+        validation_alias=AliasChoices("CODEATLAS_LLM_TIMEOUT", "LLM_TIMEOUT"),
+    )
+    llm_temperature: float = 0.2  # low: answers should follow the evidence, not improvise
+    llm_num_ctx: int = 8192  # Ollama context window; must hold system prompt + context + answer
+    # Retrieved code sent to the LLM per question is capped here (never the whole
+    # repository - spec §17/§43). ~4 chars per token keeps this within num_ctx.
+    llm_context_max_chars: int = 14_000
+    chat_history_turns: int = 6  # prior user/assistant messages carried into a chat prompt
 
     # API
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]

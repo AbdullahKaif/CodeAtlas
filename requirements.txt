@@ -1,5 +1,5 @@
-# CodeAtlas backend - Phase 1-3 dependencies.
-# Later phases add: semgrep, ollama client.
+# CodeAtlas backend - Phase 1-4 dependencies (Ollama is reached over HTTP via httpx).
+# Later phases add: semgrep.
 fastapi>=0.115
 uvicorn[standard]>=0.30
 gitpython>=3.1.43
