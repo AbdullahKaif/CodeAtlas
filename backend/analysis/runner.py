@@ -1,4 +1,4 @@
-"""The background analysis pipeline: clone -> scan -> parse -> chunk -> embed -> index.
+"""The background analysis pipeline: clone -> scan -> parse -> chunk -> embed -> index -> security.
 
 Runs off the request thread (FastAPI background task). Progress is reported
 through a StatusTracker; results persist under the session's analysis dir.
@@ -25,6 +25,8 @@ from backend.rag.models import Chunk, ChunkSummary, IndexSummary
 from backend.rag.retriever import embed_chunks, index_vectors
 from backend.repository.clone import CloneError, clone_repository
 from backend.repository.scanner import RepositoryScan, scan_repository
+from backend.security.engine import overview_of, run_security_scan
+from backend.security.models import SecurityOverview
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,10 @@ class AnalyzeResponse(BaseModel):
     # of the analysis is still usable - spec §42, optional component failure).
     index: IndexSummary | None = None
     index_error: str | None = None
+    # security is None when no scanner could run at all; the scanner statuses
+    # inside it say which tools ran, failed or are not installed.
+    security: SecurityOverview | None = None
+    security_error: str | None = None
 
 
 def run_analysis(session_id: str, url: str, repo_dir, repo_name: str, tracker: StatusTracker) -> None:
@@ -75,6 +81,7 @@ def run_analysis(session_id: str, url: str, repo_dir, repo_name: str, tracker: S
         tracker.complete("chunking", f"{chunk_summary.total} chunks")
 
         index, index_error = _embed_and_index(session_id, chunk_list, tracker)
+        security, security_error = _scan_security(session_id, repo_dir, tracker)
 
         response = AnalyzeResponse(
             session_id=session_id,
@@ -84,6 +91,8 @@ def run_analysis(session_id: str, url: str, repo_dir, repo_name: str, tracker: S
             chunks=chunk_summary,
             index=index,
             index_error=index_error,
+            security=security,
+            security_error=security_error,
         )
         _persist(session_id, response, knowledge, chunk_list)
         tracker.finish()
@@ -127,6 +136,33 @@ def _embed_and_index(
         return None, str(exc)
 
 
+def _scan_security(
+    session_id: str, repo_dir, tracker: StatusTracker
+) -> tuple[SecurityOverview | None, str | None]:
+    """Optional stage: missing or failing scanners degrade security, never the analysis."""
+    try:
+        tracker.start("security")
+        report = run_security_scan(
+            session_id, repo_dir, progress=lambda detail: tracker.progress("security", detail)
+        )
+    except Exception as exc:
+        logger.warning("Security scan failed; analysis continues without it: %s", exc)
+        tracker.stage_failed("security", "security scan failed")
+        return None, "Security scan failed unexpectedly."
+
+    ran = [s.name for s in report.scanners if s.ran]
+    if not ran:
+        reasons = "; ".join(f"{s.name}: {s.error}" for s in report.scanners if s.error)
+        tracker.stage_failed("security", reasons or "no scanner available")
+        return overview_of(report), reasons or "No security scanner is installed."
+    skipped = [f"{s.name} {s.error}" for s in report.scanners if not s.ran and s.error]
+    detail = f"{report.summary.total} findings ({', '.join(ran)})"
+    if skipped:
+        detail += f"; {'; '.join(skipped)}"
+    tracker.complete("security", detail)
+    return overview_of(report), None
+
+
 def _persist(
     session_id: str, response: AnalyzeResponse, knowledge: KnowledgeBase, chunk_list: list[Chunk]
 ) -> None:
@@ -145,5 +181,5 @@ def _persist(
 def _scrub_session_content(session_id: str) -> None:
     """Remove repository content after a failed run; keep status.json for the UI."""
     session_dir = settings.session_dir(session_id)
-    for subdir in ("repository", "analysis", "vectors"):
+    for subdir in ("repository", "analysis", "vectors", "security"):
         shutil.rmtree(session_dir / subdir, ignore_errors=True)

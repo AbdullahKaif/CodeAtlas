@@ -37,9 +37,9 @@ Everything runs locally. Repository content is never sent to an external API.
 | 3b | Embeddings (bge-small) + FAISS + retrieval endpoint | Done |
 | 3c | Background analysis with staged progress | Done |
 | 4 | Ollama + Qwen3-Coder RAG chat with validated source references | Done |
-| 5 | Semgrep + Gitleaks security engine | Planned |
+| 5 | Semgrep + Gitleaks security engine, AI explanations and fix suggestions | Done |
 | 6 | Architecture graph, impact analysis, onboarding | Planned |
-| 7 | Fix suggestions, documentation, test generation | Planned |
+| 7 | Documentation and test generation | Planned |
 | 8 | Frontend polish, privacy, demo | Planned |
 
 ## Tech stack
@@ -88,6 +88,23 @@ export OLLAMA_MODEL=qwen2.5-coder:7b      # Windows: set OLLAMA_MODEL=qwen2.5-co
 Without Ollama everything else still works; the chat page shows the setup
 steps and `GET /api/llm/health` reports what is missing.
 
+## Security scanners (Semgrep + Gitleaks)
+
+Both scanners are optional: analysis completes without them and the Security
+page explains what is missing. Install them for real findings:
+
+```bash
+pip install semgrep          # or: pipx install semgrep
+# Gitleaks: download a release from https://github.com/gitleaks/gitleaks/releases
+# (or `brew install gitleaks` / `winget install gitleaks`) and put it on PATH.
+```
+
+Semgrep runs fully offline with the rules bundled in `backend/security/rules/`
+(metrics off, no registry access). To add Semgrep registry packs when network
+access is acceptable: `CODEATLAS_SEMGREP_EXTRA_CONFIGS=p/python,p/secrets`.
+Executables can be pointed at explicitly with `CODEATLAS_SEMGREP_PATH` and
+`CODEATLAS_GITLEAKS_PATH`.
+
 ## Frontend setup
 
 Requires Node 18+.
@@ -125,6 +142,9 @@ different host/port, set `NEXT_PUBLIC_API_URL` - see `frontend/.env.local.exampl
 | POST | `/api/search` | Retrieve the chunks most similar to a question (local embeddings) |
 | POST | `/api/chat` | Answer a question with the local LLM, grounded in retrieved code; citations validated |
 | GET | `/api/llm/health` | Whether Ollama and the configured model are ready (setup instructions if not) |
+| GET | `/api/security/{session_id}` | Normalized Semgrep + Gitleaks findings (secrets redacted) with scanner statuses |
+| POST | `/api/security/explain` | AI explanation of one finding (what, why, impact, data flow, remediation), cached per session |
+| POST | `/api/security/fix` | AI fix suggestion: explanation, corrected region, unified diff, side effects; never applied |
 | GET | `/api/repository/{session_id}/overview` | Read back the analysis result |
 | DELETE | `/api/session/{session_id}` | Delete all session data (privacy) |
 | GET | `/api/health` | Health check |
@@ -160,6 +180,18 @@ not require network access.
   when offline.
 - LLM inference goes to the local Ollama server only (`OLLAMA_BASE_URL`,
   default `http://127.0.0.1:11434`). Prompts and answers are never logged.
+
+## How security findings stay honest
+
+- Findings come only from the deterministic scanners. The AI explains and
+  proposes fixes; it cannot add, remove or re-grade a finding.
+- Secret values never leave the scanner: Gitleaks' raw report is parsed,
+  redacted and deleted immediately; the persisted report, the API, the UI and
+  the prompts sent to the local model only ever contain `[REDACTED]`.
+- Scanners run as argument arrays with no shell, a timeout, a report size
+  limit, and metrics/version checks disabled. Repository code is never executed.
+- Fix suggestions are returned as a unified diff and labelled AI-generated;
+  nothing is ever written to the cloned repository.
 
 ## How AI answers stay honest
 
@@ -199,8 +231,9 @@ The LLM settings also accept the bare names from the spec: `OLLAMA_BASE_URL`,
 - Chat answers are only as good as retrieval: a question about code that was
   not retrieved gets an honest "the retrieved code does not show..." rather
   than a guess.
-- Security scanning, the architecture graph, impact analysis and onboarding
-  are not implemented yet.
-
-Semgrep and Gitleaks setup instructions will be added in the phase that
-introduces them.
+- The bundled Semgrep rules cover Python only (SQL/command/code injection,
+  unsafe deserialization, TLS/JWT verification, template injection, debug
+  mode, weak hashes, insecure temp files, hard-coded credentials). Registry
+  packs extend coverage when network access is acceptable.
+- Gitleaks scans the checked-out files, not the git history (clones are shallow).
+- The architecture graph, impact analysis and onboarding are not implemented yet.

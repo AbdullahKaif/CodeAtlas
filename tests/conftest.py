@@ -115,7 +115,11 @@ class _UnavailableLLMClient(LLMClient):
         raise LLMUnavailableError("Ollama is not reachable (test guard); use fake_llm.")
 
 
-_LLM_LOOKUPS = ("backend.rag.pipeline.get_llm_client", "backend.api.chat.get_llm_client")
+_LLM_LOOKUPS = (
+    "backend.rag.pipeline.get_llm_client",
+    "backend.api.chat.get_llm_client",
+    "backend.security.explain.get_llm_client",
+)
 
 
 @pytest.fixture(autouse=True)

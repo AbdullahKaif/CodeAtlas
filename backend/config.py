@@ -68,6 +68,16 @@ class Settings(BaseSettings):
     llm_context_max_chars: int = 14_000
     chat_history_turns: int = 6  # prior user/assistant messages carried into a chat prompt
 
+    # Security scanners. Executables are looked up on PATH unless a path is given.
+    semgrep_path: str | None = None
+    gitleaks_path: str | None = None
+    # Comma-separated extra Semgrep configs (registry packs like "p/python" need
+    # network access; the bundled rules under backend/security/rules always run).
+    semgrep_extra_configs: str = ""
+    security_scan_timeout_seconds: float = 300.0
+    security_report_limit_bytes: int = 50_000_000  # refuse scanner reports larger than this
+    security_max_findings: int = 2000  # findings kept per report (sorted by severity first)
+
     # API
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 

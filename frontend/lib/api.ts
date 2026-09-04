@@ -5,6 +5,9 @@ import type {
   ChatAnswer,
   ChatMessage,
   LLMHealth,
+  SecurityExplanation,
+  SecurityFix,
+  SecurityReport,
 } from "@/types/analysis";
 
 export const API_BASE =
@@ -81,5 +84,31 @@ export function askQuestion(
   return request<ChatAnswer>("/api/chat", {
     method: "POST",
     body: JSON.stringify({ session_id: sessionId, question, history }),
+  });
+}
+
+export function getSecurityReport(sessionId: string): Promise<SecurityReport> {
+  return request<SecurityReport>(`/api/security/${encodeURIComponent(sessionId)}`);
+}
+
+export function explainFinding(
+  sessionId: string,
+  findingId: string,
+  refresh = false,
+): Promise<SecurityExplanation> {
+  return request<SecurityExplanation>("/api/security/explain", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, finding_id: findingId, refresh }),
+  });
+}
+
+export function suggestFix(
+  sessionId: string,
+  findingId: string,
+  refresh = false,
+): Promise<SecurityFix> {
+  return request<SecurityFix>("/api/security/fix", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, finding_id: findingId, refresh }),
   });
 }

@@ -47,7 +47,11 @@ class TestAnalyze:
 
         status = client.get(f"/api/analysis/{session_id}/status").json()
         assert status["state"] == "completed"
-        assert [s["state"] for s in status["stages"]] == ["completed"] * 6
+        assert [s["name"] for s in status["stages"]][-1] == "security"
+        assert [s["state"] for s in status["stages"]][:6] == ["completed"] * 6
+        # The security stage depends on which scanners are installed on this
+        # machine; either way it must have settled, never stayed pending.
+        assert status["stages"][-1]["state"] in {"completed", "failed"}
         embedding = next(s for s in status["stages"] if s["name"] == "embedding")
         assert "chunks" in embedding["detail"]  # real counts, not faked progress
 
@@ -62,6 +66,7 @@ class TestAnalyze:
         assert body["index"]["chunks_indexed"] == body["chunks"]["total"]
         assert body["index"]["model"] == "fake-embed"
         assert body["index_error"] is None
+        assert {s["name"] for s in body["security"]["scanners"]} == {"semgrep", "gitleaks"}
 
         analysis_dir = temp_sessions / f"session_{session_id}" / "analysis"
         assert (analysis_dir / "entities.json").exists()
