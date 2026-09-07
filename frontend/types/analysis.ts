@@ -546,3 +546,94 @@ export interface TestSuggestion {
   duration_seconds: number;
   disclaimer: string;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 8: Codebase Health Indicators and the session footprint
+// ---------------------------------------------------------------------------
+
+export interface Framework {
+  name: string;
+  category: string;
+  evidence: string;
+}
+
+export interface SecurityIndicators {
+  scanned: boolean;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  secrets: number;
+  scanners_ran: string[];
+  note: string;
+}
+
+export interface DocumentationIndicators {
+  readme_present: boolean;
+  readme_path: string | null;
+  documentation_files: number;
+  documentation_paths: string[];
+  documented_entities: number;
+  documentable_entities: number;
+  docstring_coverage: number | null;
+}
+
+export interface LargeItem {
+  id: string;
+  lines: number;
+}
+
+export interface ManyParameters {
+  id: string;
+  parameters: number;
+}
+
+export interface MaintainabilityIndicators {
+  source_files: number;
+  functions: number;
+  very_large_files: LargeItem[];
+  very_large_files_total: number;
+  very_large_functions: LargeItem[];
+  very_large_functions_total: number;
+  many_parameter_functions: ManyParameters[];
+  many_parameter_functions_total: number;
+  largest_file_lines: number;
+  longest_function_lines: number;
+  median_function_lines: number;
+  thresholds: Record<string, number>;
+}
+
+export interface DependencyIndicators {
+  files: string[];
+  count: number | null;
+  packages: string[];
+  pinned: number | null;
+  unparsed_files: string[];
+}
+
+export interface HealthIndicators {
+  session_id: string;
+  repository: string;
+  security: SecurityIndicators;
+  documentation: DocumentationIndicators;
+  maintainability: MaintainabilityIndicators;
+  dependencies: DependencyIndicators;
+  frameworks: Framework[];
+  note: string;
+}
+
+export interface SessionArtifact {
+  name: string;
+  description: string;
+  bytes: number;
+  files: number;
+}
+
+export interface SessionFootprint {
+  session_id: string;
+  location: string;
+  total_bytes: number;
+  total_files: number;
+  artifacts: SessionArtifact[];
+  note: string;
+}

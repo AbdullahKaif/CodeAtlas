@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from backend.analysis.runner import AnalyzeResponse, RepositoryInfo, run_analysis
 from backend.analysis.status import AnalysisStatus, StatusTracker, load_status
 from backend.privacy.cleanup import delete_session
+from backend.privacy.footprint import SessionFootprint, session_footprint
 from backend.repository.clone import (
     InvalidRepoURLError,
     create_session,
@@ -88,6 +89,15 @@ def get_overview(session_id: str) -> AnalyzeResponse:
     except ValueError:
         logger.exception("Corrupt overview for session %s", session_id)
         raise HTTPException(status_code=500, detail="Stored analysis is corrupt. Re-analyze the repository.")
+
+
+@router.get("/session/{session_id}/footprint", response_model=SessionFootprint)
+def get_session_footprint(session_id: str) -> SessionFootprint:
+    """What this session stores on disk and where (spec §38): the artifacts deletion removes, with sizes."""
+    session_dir = get_session_dir(session_id)
+    if session_dir is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return session_footprint(session_id, session_dir)
 
 
 @router.delete("/session/{session_id}", response_model=DeleteSessionResponse)

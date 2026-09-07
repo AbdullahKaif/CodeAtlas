@@ -29,6 +29,8 @@ const FEATURES: { title: string; text: string; soon?: boolean }[] = [
   { title: "Grounded AI chat", text: "Ask how the code works. Answers come from a local model and cite verified file and line references." },
   { title: "Security scanning", text: "Semgrep + Gitleaks findings, secrets redacted, with AI explanations and fix suggestions." },
   { title: "Architecture, impact & onboarding", text: "Interactive dependency graph, change-impact analysis and a guided learning path built from the code." },
+  { title: "Docs & tests, drafted from evidence", text: "README, architecture and API drafts plus suggested tests, grounded in retrieved code and never written to the repository." },
+  { title: "Health indicators, not scores", text: "Documentation coverage, oversized files and functions, dependencies and frameworks, as plain counts you can check." },
 ];
 
 export default function LandingPage() {

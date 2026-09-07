@@ -5,8 +5,10 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from backend.api.deps import knowledge_or_error
+from backend.health.indicators import HealthIndicators, compute_health
 from backend.knowledge.store import KnowledgeIndex
 from backend.parser.models import Entity
+from backend.security.engine import load_report
 
 router = APIRouter()
 
@@ -67,3 +69,10 @@ def _summary(index: KnowledgeIndex, entity: Entity) -> EntitySummary:
         docstring=entity.docstring.strip().split("\n")[0][:160] if entity.docstring else None,
         dependents=_dependents(index, entity),
     )
+
+
+@router.get("/repository/{session_id}/health", response_model=HealthIndicators)
+def get_health_indicators(session_id: str) -> HealthIndicators:
+    """Codebase Health Indicators (spec §30): deterministic security, documentation, maintainability and dependency counts."""
+    session_dir, index = knowledge_or_error(session_id)
+    return compute_health(session_id, session_dir, index, load_report(session_dir))
