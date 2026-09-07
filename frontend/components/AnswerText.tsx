@@ -38,6 +38,7 @@ function Inline({ text }: { text: string }) {
 }
 
 const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+/;
+const HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 
 function Paragraphs({ body }: { body: string }) {
   const blocks = body.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
@@ -45,6 +46,25 @@ function Paragraphs({ body }: { body: string }) {
     <>
       {blocks.map((block, i) => {
         const lines = block.split("\n");
+        const heading = HEADING.exec(lines[0]);
+        if (heading) {
+          const level = heading[1].length;
+          const rest = lines.slice(1).join("\n").trim();
+          return (
+            <div key={i}>
+              {level <= 2 ? (
+                <h3 className="mt-2 text-sm font-semibold text-ink">
+                  <Inline text={heading[2]} />
+                </h3>
+              ) : (
+                <h4 className="mt-1 text-xs font-semibold uppercase tracking-wider text-ink-3">
+                  <Inline text={heading[2]} />
+                </h4>
+              )}
+              {rest && <Paragraphs body={rest} />}
+            </div>
+          );
+        }
         if (lines.length > 0 && lines.every((l) => BULLET.test(l))) {
           return (
             <ul key={i} className="list-disc space-y-1 pl-5">

@@ -120,6 +120,8 @@ _LLM_LOOKUPS = (
     "backend.api.chat.get_llm_client",
     "backend.security.explain.get_llm_client",
     "backend.impact.explain.get_llm_client",
+    "backend.documentation.generator.get_llm_client",
+    "backend.testgen.generator.get_llm_client",
 )
 
 

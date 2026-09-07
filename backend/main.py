@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.analyze import router as analyze_router
 from backend.api.architecture import router as architecture_router
 from backend.api.chat import router as chat_router
+from backend.api.documentation import router as documentation_router
 from backend.api.impact import router as impact_router
 from backend.api.onboarding import router as onboarding_router
 from backend.api.repository import router as repository_router
@@ -39,6 +40,7 @@ app.include_router(repository_router, prefix="/api", tags=["repository"])
 app.include_router(architecture_router, prefix="/api", tags=["architecture"])
 app.include_router(impact_router, prefix="/api", tags=["impact"])
 app.include_router(onboarding_router, prefix="/api", tags=["onboarding"])
+app.include_router(documentation_router, prefix="/api", tags=["documentation"])
 
 
 @app.get("/api/health")

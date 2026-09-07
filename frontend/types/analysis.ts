@@ -450,3 +450,99 @@ export interface RepositorySummary {
   cached: boolean;
   generated_at: string;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 7: documentation drafts and test suggestions
+// ---------------------------------------------------------------------------
+
+export type DocumentationKind = "readme" | "architecture" | "developer_guide" | "api_overview";
+
+export interface ExistingDocument {
+  path: string;
+  role: string;
+  size_bytes: number;
+}
+
+export interface DocumentationKindInfo {
+  kind: DocumentationKind;
+  title: string;
+  description: string;
+  filename: string;
+  cached: boolean;
+}
+
+export interface DocumentationStatus {
+  session_id: string;
+  repository: string;
+  kinds: DocumentationKindInfo[];
+  existing_documents: ExistingDocument[];
+  note: string;
+}
+
+export interface GeneratedDocumentation {
+  session_id: string;
+  kind: DocumentationKind;
+  title: string;
+  filename: string;
+  markdown: string;
+  existing_documents: ExistingDocument[];
+  retrieval_used: boolean;
+  sources: SourceReference[];
+  context: RetrievedChunk[];
+  references_removed: number;
+  model: string;
+  cached: boolean;
+  generated_at: string;
+  duration_seconds: number;
+  note: string;
+}
+
+export interface TestingConventions {
+  framework: "pytest" | "unittest" | "unknown";
+  test_files: number;
+  test_directories: string[];
+  naming_pattern: string | null;
+  fixtures_file: string | null;
+  example_test_file: string | null;
+  evidence: string[];
+}
+
+export interface TestCategory {
+  name: "normal" | "edge" | "invalid_input" | "error_conditions";
+  label: string;
+  tests: string[];
+  covered: boolean;
+}
+
+export interface TestTarget {
+  id: string;
+  type: string;
+  name: string;
+  file: string;
+  start_line: number;
+  end_line: number;
+  signature?: string | null;
+  docstring?: string | null;
+  parent?: string | null;
+}
+
+export interface TestSuggestion {
+  session_id: string;
+  target: TestTarget;
+  conventions: TestingConventions;
+  suggested_file: string;
+  suggested_file_exists: boolean;
+  explanation: string;
+  code: string;
+  categories: TestCategory[];
+  assumptions: string;
+  existing_tests: string[];
+  sources: SourceReference[];
+  context: RetrievedChunk[];
+  references_removed: number;
+  model: string;
+  cached: boolean;
+  generated_at: string;
+  duration_seconds: number;
+  disclaimer: string;
+}

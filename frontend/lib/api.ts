@@ -4,6 +4,9 @@ import type {
   AnalyzeStarted,
   ChatAnswer,
   ChatMessage,
+  DocumentationKind,
+  DocumentationStatus,
+  GeneratedDocumentation,
   LLMHealth,
   ArchitectureGraph,
   EntitySearchResponse,
@@ -14,6 +17,8 @@ import type {
   SecurityExplanation,
   SecurityFix,
   SecurityReport,
+  TestingConventions,
+  TestSuggestion,
 } from "@/types/analysis";
 
 export const API_BASE =
@@ -173,5 +178,31 @@ export function getRepositorySummary(sessionId: string, refresh = false): Promis
   return request<RepositorySummary>("/api/onboarding/summary", {
     method: "POST",
     body: JSON.stringify({ session_id: sessionId, refresh }),
+  });
+}
+
+export function getDocumentationStatus(sessionId: string): Promise<DocumentationStatus> {
+  return request<DocumentationStatus>(`/api/documentation/${encodeURIComponent(sessionId)}`);
+}
+
+export function generateDocumentation(
+  sessionId: string,
+  kind: DocumentationKind,
+  refresh = false,
+): Promise<GeneratedDocumentation> {
+  return request<GeneratedDocumentation>("/api/documentation", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, kind, refresh }),
+  });
+}
+
+export function getTestingConventions(sessionId: string): Promise<TestingConventions> {
+  return request<TestingConventions>(`/api/tests/${encodeURIComponent(sessionId)}/conventions`);
+}
+
+export function generateTests(sessionId: string, target: string, refresh = false): Promise<TestSuggestion> {
+  return request<TestSuggestion>("/api/tests", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, target, refresh }),
   });
 }
