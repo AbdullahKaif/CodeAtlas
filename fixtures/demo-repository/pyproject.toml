@@ -1,0 +1,9 @@
+[project]
+name = "taskflow"
+version = "0.3.0"
+description = "Demonstration task-tracking service for CodeAtlas."
+requires-python = ">=3.11"
+dependencies = ["fastapi>=0.110", "sqlalchemy>=2.0", "pydantic>=2.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

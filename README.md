@@ -40,7 +40,7 @@ Everything runs locally. Repository content is never sent to an external API.
 | 5 | Semgrep + Gitleaks security engine, AI explanations and fix suggestions | Done |
 | 6 | Architecture graph, impact analysis, onboarding (New Developer Mode) | Done |
 | 7 | Documentation drafts (README, architecture, developer guide, API) and test suggestions | Done |
-| 8 | Frontend polish, privacy, demo | Planned |
+| 8 | Codebase Health Indicators, session footprint and verified deletion, demo repository and demo script | Done |
 
 ## Tech stack
 
@@ -156,6 +156,8 @@ different host/port, set `NEXT_PUBLIC_API_URL` - see `frontend/.env.local.exampl
 | GET | `/api/tests/{session_id}/conventions` | Testing conventions detected from the repository (framework, layout, naming, fixtures) |
 | POST | `/api/tests` | Suggested tests for one function or method (normal, edge, invalid-input, error cases) with the evidence shown to the model; suggestions only |
 | GET | `/api/repository/{session_id}/overview` | Read back the analysis result |
+| GET | `/api/repository/{session_id}/health` | Codebase Health Indicators: security counts, README and docstring coverage, oversized files and functions, dependencies and frameworks (counts, not scores) |
+| GET | `/api/session/{session_id}/footprint` | What the session stores on disk and where, with sizes; what deletion removes |
 | DELETE | `/api/session/{session_id}` | Delete all session data (privacy) |
 | GET | `/api/health` | Health check |
 
@@ -166,6 +168,14 @@ curl -X POST http://127.0.0.1:8000/api/analyze \
   -H "Content-Type: application/json" \
   -d "{\"repo_url\": \"https://github.com/pallets/click\"}"
 ```
+
+## Demo
+
+`fixtures/demo-repository/` is TaskFlow, a small fictional task service with an
+authentication layer, an API layer, a service layer, a SQLite layer, tests, four
+labelled deliberate defects and synthetic secret-shaped values. Push it to a GitHub
+repository and paste that URL to run the full demo; the step-by-step script is in
+[`docs/demo.md`](docs/demo.md).
 
 ## Tests
 

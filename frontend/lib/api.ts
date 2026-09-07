@@ -7,6 +7,7 @@ import type {
   DocumentationKind,
   DocumentationStatus,
   GeneratedDocumentation,
+  HealthIndicators,
   LLMHealth,
   ArchitectureGraph,
   EntitySearchResponse,
@@ -17,6 +18,7 @@ import type {
   SecurityExplanation,
   SecurityFix,
   SecurityReport,
+  SessionFootprint,
   TestingConventions,
   TestSuggestion,
 } from "@/types/analysis";
@@ -205,4 +207,12 @@ export function generateTests(sessionId: string, target: string, refresh = false
     method: "POST",
     body: JSON.stringify({ session_id: sessionId, target, refresh }),
   });
+}
+
+export function getHealthIndicators(sessionId: string): Promise<HealthIndicators> {
+  return request<HealthIndicators>(`/api/repository/${encodeURIComponent(sessionId)}/health`);
+}
+
+export function getSessionFootprint(sessionId: string): Promise<SessionFootprint> {
+  return request<SessionFootprint>(`/api/session/${encodeURIComponent(sessionId)}/footprint`);
 }
