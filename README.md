@@ -39,7 +39,7 @@ Everything runs locally. Repository content is never sent to an external API.
 | 4 | Ollama + Qwen3-Coder RAG chat with validated source references | Done |
 | 5 | Semgrep + Gitleaks security engine, AI explanations and fix suggestions | Done |
 | 6 | Architecture graph, impact analysis, onboarding (New Developer Mode) | Done |
-| 7 | Documentation and test generation | Planned |
+| 7 | Documentation drafts (README, architecture, developer guide, API) and test suggestions | Done |
 | 8 | Frontend polish, privacy, demo | Planned |
 
 ## Tech stack
@@ -151,6 +151,10 @@ different host/port, set `NEXT_PUBLIC_API_URL` - see `frontend/.env.local.exampl
 | POST | `/api/impact/explain` | AI reading of the static impact result (consequences, checks, tests), citations validated |
 | GET | `/api/onboarding/{session_id}` | Evidence-based guide: overview, important files, reading order, stages, learning path |
 | POST | `/api/onboarding/summary` | AI repository summary grounded in retrieved docs and code (cached per session) |
+| GET | `/api/documentation/{session_id}` | Document kinds that can be drafted, which are cached, and the documentation the repository already has |
+| POST | `/api/documentation` | Draft a README, architecture doc, developer guide or API overview as Markdown from a structural fact sheet plus retrieved code; never written to the repository |
+| GET | `/api/tests/{session_id}/conventions` | Testing conventions detected from the repository (framework, layout, naming, fixtures) |
+| POST | `/api/tests` | Suggested tests for one function or method (normal, edge, invalid-input, error cases) with the evidence shown to the model; suggestions only |
 | GET | `/api/repository/{session_id}/overview` | Read back the analysis result |
 | DELETE | `/api/session/{session_id}` | Delete all session data (privacy) |
 | GET | `/api/health` | Health check |
@@ -254,4 +258,4 @@ The LLM settings also accept the bare names from the spec: `OLLAMA_BASE_URL`,
   mode, weak hashes, insecure temp files, hard-coded credentials). Registry
   packs extend coverage when network access is acceptable.
 - Gitleaks scans the checked-out files, not the git history (clones are shallow).
-- Documentation and test generation (Phase 7) are not implemented yet.
+- Documentation drafts and test suggestions are returned as text to copy or download; CodeAtlas never writes into the cloned repository.

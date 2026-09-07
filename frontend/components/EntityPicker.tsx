@@ -9,10 +9,13 @@ export default function EntityPicker({
   sessionId,
   onPick,
   placeholder = "Search a file, class, function or method…",
+  types,
 }: {
   sessionId: string;
   onPick: (entity: EntitySummary) => void;
   placeholder?: string;
+  /** Restrict results to these entity types (e.g. ["function", "method"]). */
+  types?: string[];
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<EntitySummary[]>([]);
@@ -22,7 +25,7 @@ export default function EntityPicker({
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      searchEntities(sessionId, query, { limit: 12 })
+      searchEntities(sessionId, query, { limit: 12, types })
         .then((response) => {
           if (!cancelled) {
             setResults(response.results);
@@ -37,7 +40,8 @@ export default function EntityPicker({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [sessionId, query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- types is compared by content
+  }, [sessionId, query, types?.join(",")]);
 
   return (
     <div className="relative">
